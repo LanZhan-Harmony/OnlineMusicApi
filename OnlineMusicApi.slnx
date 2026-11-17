@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="OnlineMusicApi/OnlineMusicApi.csproj" />
+  <Project Path="OnlineMusicApi.Samples/OnlineMusicApi.Samples.csproj" />
+  <Project Path="OnlineMusicApi.Tests/OnlineMusicApi.Tests.csproj" />
+</Solution>
