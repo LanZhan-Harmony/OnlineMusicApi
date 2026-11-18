@@ -12,5 +12,6 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" Version="1.86.0" />
+    <ProjectReference Include="..\OnlineMusicApi\OnlineMusicApi.csproj" />
   </ItemGroup>
 </Project>

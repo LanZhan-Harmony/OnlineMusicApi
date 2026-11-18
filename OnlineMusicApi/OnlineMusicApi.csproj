@@ -5,6 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>OnlineMusicApi</PackageId>
+    <Description>多源在线音乐聚合 API 客户端</Description>
+    <Authors>OnlineMusicApi</Authors>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

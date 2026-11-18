@@ -9,4 +9,8 @@
     <!--<PublishAot>true</PublishAot>-->
     <!--<OptimizationPreference>Speed</OptimizationPreference>-->
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OnlineMusicApi\OnlineMusicApi.csproj" />
+  </ItemGroup>
 </Project>
