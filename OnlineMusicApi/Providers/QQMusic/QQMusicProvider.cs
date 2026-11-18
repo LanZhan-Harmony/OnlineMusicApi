@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using OnlineMusicApi.Internal.Contracts.QQMusic;
 using OnlineMusicApi.Internal.Infrastructure.Caching;
 using OnlineMusicApi.Internal.Providers.Abstractions;
@@ -93,9 +91,7 @@ internal sealed class QQMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchAlbumAsync(keyword, page).ConfigureAwait(false);
-        QQAlbumPageDto dto = json.Deserialize(QQJsonContext.Default.QQAlbumPageDto)
-            ?? new QQAlbumPageDto();
+        QQAlbumPageDto dto = await _api.SearchAlbumsAsync(keyword, page).ConfigureAwait(false);
 
         List<QQAlbumDto> albums = dto.Data ?? [];
         List<Album> items = [.. albums.Skip(skip).Take(limit).Select(QQSongMapper.FromAlbum)];
@@ -125,9 +121,7 @@ internal sealed class QQMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchArtistAsync(keyword, page).ConfigureAwait(false);
-        QQArtistPageDto dto = json.Deserialize(QQJsonContext.Default.QQArtistPageDto)
-            ?? new QQArtistPageDto();
+        QQArtistPageDto dto = await _api.SearchArtistsAsync(keyword, page).ConfigureAwait(false);
 
         List<QQArtistDto> artists = dto.Data ?? [];
         List<Artist> items = [.. artists.Skip(skip).Take(limit).Select(QQSongMapper.FromArtist)];
@@ -157,9 +151,8 @@ internal sealed class QQMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchMusicSheetAsync(keyword, page).ConfigureAwait(false);
-        QQPlaylistPageDto dto = json.Deserialize(QQJsonContext.Default.QQPlaylistPageDto)
-            ?? new QQPlaylistPageDto();
+        QQPlaylistPageDto dto = await _api.SearchPlaylistsAsync(keyword, page)
+            .ConfigureAwait(false);
 
         List<QQPlaylistDto> playlists = dto.Data ?? [];
         List<Playlist> items =
@@ -199,9 +192,7 @@ internal sealed class QQMusicProvider
     {
         EnsureSource(id.Source);
 
-        JsonObject item = new() { ["songmid"] = id.Value };
-        JsonObject json = await _api.GetLyricAsync(item).ConfigureAwait(false);
-        QQLyricDto? dto = json.Deserialize(QQJsonContext.Default.QQLyricDto);
+        QQLyricDto dto = await _api.GetLyricAsync(id.Value).ConfigureAwait(false);
 
         return QQSongMapper.FromLyric(id, dto);
     }
@@ -210,21 +201,15 @@ internal sealed class QQMusicProvider
     {
         EnsureSource(id.Source);
 
-        JsonObject? page = await _api.GetAlbumPageAsync(id.Value).ConfigureAwait(false);
-        if (page is not null)
+        QQAlbumDetailPageDto? pageDto = await _api.GetAlbumPageAsync(id.Value)
+            .ConfigureAwait(false);
+        if (pageDto?.Detail is not null)
         {
-            QQAlbumDetailPageDto? pageDto = page.Deserialize(
-                QQJsonContext.Default.QQAlbumDetailPageDto
-            );
-            if (pageDto?.Detail is not null)
-            {
-                return QQSongMapper.FromAlbumPage(id, pageDto);
-            }
+            return QQSongMapper.FromAlbumPage(id, pageDto);
         }
 
-        (_, List<QQSongDto> songs) = await FetchAlbumSongsRawAsync(id, cancellationToken)
-            .ConfigureAwait(false);
-
+        QQAlbumSongsDto songsDto = await _api.GetAlbumSongsAsync(id.Value).ConfigureAwait(false);
+        List<QQSongDto> songs = songsDto.MusicList ?? [];
         if (songs.Count == 0)
         {
             throw new OnlineMusicApiResponseException(
@@ -234,14 +219,14 @@ internal sealed class QQMusicProvider
             );
         }
 
-        QQSongDto first = songs[0];
+        Song? firstSong = QQSongMapper.FromSong(songs[0]);
         return new Album
         {
             Id = id,
-            Title = first.Album ?? string.Empty,
+            Title = firstSong?.Album?.Title ?? string.Empty,
             SongCount = songs.Count,
-            CoverUrl = first.Artwork ?? string.Empty,
-            Artists = QQSongMapper.FromSong(first)?.Artists ?? [],
+            CoverUrl = firstSong?.CoverUrl ?? string.Empty,
+            Artists = firstSong?.Artists ?? [],
         };
     }
 
@@ -280,8 +265,7 @@ internal sealed class QQMusicProvider
     {
         EnsureSource(id.Source);
 
-        JsonObject? page = await _api.GetArtistPageAsync(id.Value).ConfigureAwait(false);
-        QQSingerPageDto? dto = page?.Deserialize(QQJsonContext.Default.QQSingerPageDto);
+        QQSingerPageDto? dto = await _api.GetArtistPageAsync(id.Value).ConfigureAwait(false);
 
         if (dto?.SingerDetail?.BasicInfo is null)
         {
@@ -308,11 +292,7 @@ internal sealed class QQMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
         (int page, int skip) = ToPage(offset);
 
-        JsonObject artistItem = new() { ["singerMID"] = id.Value };
-        JsonObject json = await _api.GetArtistWorksAsync(artistItem, page, "album")
-            .ConfigureAwait(false);
-        QQAlbumPageDto dto = json.Deserialize(QQJsonContext.Default.QQAlbumPageDto)
-            ?? new QQAlbumPageDto();
+        QQAlbumPageDto dto = await _api.GetArtistAlbumsAsync(id.Value, page).ConfigureAwait(false);
 
         List<QQAlbumDto> albums = dto.Data ?? [];
         List<Album> items = [.. albums.Skip(skip).Take(limit).Select(QQSongMapper.FromAlbum)];
@@ -371,9 +351,7 @@ internal sealed class QQMusicProvider
         cancellationToken.ThrowIfCancellationRequested();
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
-        QQSongPageDto dto = json.Deserialize(QQJsonContext.Default.QQSongPageDto)
-            ?? new QQSongPageDto();
+        QQSongPageDto dto = await _api.SearchSongsAsync(keyword, page).ConfigureAwait(false);
 
         List<QQSongDto> songs = dto.Data ?? [];
         List<RawSong> items = [];
@@ -397,19 +375,12 @@ internal sealed class QQMusicProvider
 
     private async Task<MediaSource?> FetchMediaAsync(SongId id, CancellationToken cancellationToken)
     {
-        JsonObject item = new() { ["songmid"] = id.Value };
-        JsonObject? json = await _api.GetMediaSourceAsync(
-                item,
+        QQMediaDto? dto = await _api.GetMediaSourceAsync(
+                id.Value,
                 ToQualityString(AudioQuality.Highest)
             )
             .ConfigureAwait(false);
 
-        if (json is null)
-        {
-            return null;
-        }
-
-        QQMediaDto? dto = json.Deserialize(QQJsonContext.Default.QQMediaDto);
         return QQSongMapper.FromMedia(dto, AudioQuality.Highest);
     }
 
@@ -474,23 +445,10 @@ internal sealed class QQMusicProvider
             return cached;
         }
 
-        (_, List<QQSongDto> songs) = await FetchAlbumSongsRawAsync(id, cancellationToken)
-            .ConfigureAwait(false);
-        RawSong[] snapshot = ToSnapshot(songs);
+        QQAlbumSongsDto dto = await _api.GetAlbumSongsAsync(id.Value).ConfigureAwait(false);
+        RawSong[] snapshot = ToSnapshot(dto.MusicList ?? []);
         _snapshots.Set(key, snapshot);
         return snapshot;
-    }
-
-    private async Task<(JsonObject Json, List<QQSongDto> Songs)> FetchAlbumSongsRawAsync(
-        AlbumId id,
-        CancellationToken cancellationToken
-    )
-    {
-        JsonObject albumItem = new() { ["albumMID"] = id.Value };
-        JsonObject json = await _api.GetAlbumInfoAsync(albumItem).ConfigureAwait(false);
-        QQAlbumSongsDto? dto = json.Deserialize(QQJsonContext.Default.QQAlbumSongsDto);
-
-        return (json, dto?.MusicList ?? []);
     }
 
     private async Task<IReadOnlyList<RawSong>> GetPlaylistSnapshotAsync(
@@ -507,11 +465,9 @@ internal sealed class QQMusicProvider
             return cached;
         }
 
-        JsonArray array = await _api.GetMusicSheetSongsAsync(id.Value).ConfigureAwait(false);
-        JsonObject wrapper = new() { ["musicList"] = array };
-        QQAlbumSongsDto? dto = wrapper.Deserialize(QQJsonContext.Default.QQAlbumSongsDto);
+        List<QQSongDto> songs = await _api.GetMusicSheetSongsAsync(id.Value).ConfigureAwait(false);
 
-        RawSong[] snapshot = ToSnapshot(dto?.MusicList ?? []);
+        RawSong[] snapshot = ToSnapshot(songs);
         _snapshots.Set(key, snapshot);
         return snapshot;
     }

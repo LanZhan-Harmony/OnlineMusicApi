@@ -21,7 +21,9 @@ internal static class KuwoPageParser
                 First(
                     GetString(singer, "pic300"),
                     GetString(singer, "pic120"),
-                    GetString(singer, "pic"))),
+                    GetString(singer, "pic")
+                )
+            ),
         };
     }
 
@@ -35,11 +37,13 @@ internal static class KuwoPageParser
         string artist = First(
             GetString(album, "artist"),
             GetString(first, "artist"),
-            GetString(album, "fartist"));
+            GetString(album, "fartist")
+        );
         string artistId = First(
             GetString(album, "artistid"),
             GetString(first, "artistid"),
-            GetString(first, "allartistid"));
+            GetString(first, "allartistid")
+        );
 
         return new Album
         {
@@ -47,19 +51,30 @@ internal static class KuwoPageParser
             Title = Decode(First(GetString(album, "name"), GetString(first, "album"))),
             Artists = string.IsNullOrWhiteSpace(artist)
                 ? []
-                : [new ArtistRef { Id = KuwoSongMapper.ArtistIdOf(artistId), Name = Decode(artist) }],
+                :
+                [
+                    new ArtistRef
+                    {
+                        Id = KuwoSongMapper.ArtistIdOf(artistId),
+                        Name = Decode(artist),
+                    },
+                ],
             Year = ParseYear(
                 First(
                     GetString(album, "releaseDate"),
                     GetString(album, "pub"),
-                    GetString(first, "releasedate"))),
+                    GetString(first, "releasedate")
+                )
+            ),
             SongCount = GetInt(album, "songnum") ?? songs?.Count,
             Description = Decode(GetString(album, "info")),
             CoverUrl = Decode(
                 First(
                     GetString(album, "hts_img"),
                     GetString(album, "img"),
-                    GetString(first, "pic120"))),
+                    GetString(first, "pic120")
+                )
+            ),
         };
     }
 
@@ -70,7 +85,10 @@ internal static class KuwoPageParser
             : null;
     }
 
-    private static Dictionary<string, object?>? GetObject(Dictionary<string, object?>? source, string key)
+    private static Dictionary<string, object?>? GetObject(
+        Dictionary<string, object?>? source,
+        string key
+    )
     {
         return source?.GetValueOrDefault(key) as Dictionary<string, object?>;
     }
@@ -100,7 +118,8 @@ internal static class KuwoPageParser
             GetString(source, key),
             NumberStyles.Integer,
             CultureInfo.InvariantCulture,
-            out int value)
+            out int value
+        )
             ? value
             : null;
     }
@@ -118,12 +137,15 @@ internal static class KuwoPageParser
 
     private static int? ParseYear(string? value)
     {
-        if (value is { Length: >= 4 }
+        if (
+            value is { Length: >= 4 }
             && int.TryParse(
                 value.AsSpan(0, 4),
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
-                out int year))
+                out int year
+            )
+        )
         {
             return year;
         }

@@ -1,42 +1,45 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace OnlineMusicApi.Internal.Contracts.Bilibili;
 
 internal sealed class BilibiliMediaDto
 {
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
-
     [JsonPropertyName("aid")]
-    public string? Aid { get; set; }
+    public long Aid { get; set; }
 
     [JsonPropertyName("bvid")]
     public string? Bvid { get; set; }
 
     [JsonPropertyName("cid")]
-    public string? Cid { get; set; }
-
-    [JsonPropertyName("artist")]
-    public string? Artist { get; set; }
+    public long? Cid { get; set; }
 
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 
-    [JsonPropertyName("alias")]
-    public string? Alias { get; set; }
+    [JsonPropertyName("author")]
+    public string? Author { get; set; }
 
-    [JsonPropertyName("album")]
-    public string? Album { get; set; }
+    [JsonPropertyName("owner")]
+    public BilibiliOwnerDto? Owner { get; set; }
 
-    [JsonPropertyName("artwork")]
-    public string? Artwork { get; set; }
+    [JsonPropertyName("pic")]
+    public string? Pic { get; set; }
 
     [JsonPropertyName("duration")]
-    public long Duration { get; set; }
+    public string? DurationText { get; set; }
 
-    [JsonPropertyName("date")]
-    public string? Date { get; set; }
+    [JsonPropertyName("pubdate")]
+    public long? PubDate { get; set; }
 
-    [JsonPropertyName("tags")]
-    public List<string>? Tags { get; set; }
+    [JsonPropertyName("created")]
+    public long? Created { get; set; }
+
+    [JsonPropertyName("tag")]
+    public string? Tag { get; set; }
+
+    [JsonPropertyName("part")]
+    public string? Part { get; set; }
+
+    [JsonPropertyName("page")]
+    public int? Page { get; set; }
 }

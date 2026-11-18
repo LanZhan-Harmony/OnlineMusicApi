@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using OnlineMusicApi.Internal.Contracts.FiveSing;
 using OnlineMusicApi.Internal.Infrastructure.Caching;
 using OnlineMusicApi.Internal.Providers.Abstractions;
@@ -88,10 +86,7 @@ internal sealed class FiveSingProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchAlbumAsync(keyword, page).ConfigureAwait(false);
-        FiveSingAlbumPageDto dto = json.Deserialize(
-            FiveSingJsonContext.Default.FiveSingAlbumPageDto
-        ) ?? new FiveSingAlbumPageDto();
+        FiveSingAlbumPageDto dto = await _api.SearchAlbumAsync(keyword, page).ConfigureAwait(false);
 
         List<FiveSingAlbumDto> albums = dto.Data ?? [];
         List<Album> items = [.. albums.Skip(skip).Take(limit).Select(FiveSingSongMapper.FromAlbum)];
@@ -121,10 +116,8 @@ internal sealed class FiveSingProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchArtistAsync(keyword, page).ConfigureAwait(false);
-        FiveSingArtistPageDto dto = json.Deserialize(
-            FiveSingJsonContext.Default.FiveSingArtistPageDto
-        ) ?? new FiveSingArtistPageDto();
+        FiveSingArtistPageDto dto = await _api.SearchArtistAsync(keyword, page)
+            .ConfigureAwait(false);
 
         List<FiveSingArtistDto> artists = dto.Data ?? [];
         List<Artist> items =
@@ -165,9 +158,12 @@ internal sealed class FiveSingProvider
         EnsureSource(id.Source);
 
         (string songId, string? typeEname) = FiveSingSongMapper.ParseSongId(id.Value);
-        JsonObject item = new() { ["id"] = songId, ["typeEname"] = typeEname };
-        JsonObject json = await _api.GetLyricAsync(item).ConfigureAwait(false);
-        FiveSingLyricDto? dto = json.Deserialize(FiveSingJsonContext.Default.FiveSingLyricDto);
+        if (string.IsNullOrWhiteSpace(typeEname))
+        {
+            return new Lyric { Id = id, Format = LyricFormat.Unknown };
+        }
+
+        FiveSingLyricDto dto = await _api.GetLyricAsync(songId, typeEname).ConfigureAwait(false);
 
         return FiveSingSongMapper.FromLyric(id, dto);
     }
@@ -176,8 +172,9 @@ internal sealed class FiveSingProvider
     {
         EnsureSource(id.Source);
 
-        List<FiveSingSongDto> songs = await FetchAlbumSongsRawAsync(id, cancellationToken)
+        FiveSingAlbumSongsDto songsDto = await _api.GetAlbumInfoAsync(id.Value)
             .ConfigureAwait(false);
+        List<FiveSingSongDto> songs = songsDto.MusicList ?? [];
         if (songs.Count == 0)
         {
             throw new OnlineMusicApiResponseException(
@@ -187,13 +184,13 @@ internal sealed class FiveSingProvider
             );
         }
 
-        FiveSingSongDto first = songs[0];
+        Song? firstSong = FiveSingSongMapper.FromSong(songs[0]);
         return new Album
         {
             Id = id,
-            Title = first.Album ?? string.Empty,
+            Title = firstSong?.Title ?? string.Empty,
             SongCount = songs.Count,
-            Artists = FiveSingSongMapper.FromSong(first)?.Artists ?? [],
+            Artists = firstSong?.Artists ?? [],
         };
     }
 
@@ -259,9 +256,7 @@ internal sealed class FiveSingProvider
         cancellationToken.ThrowIfCancellationRequested();
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
-        FiveSingSongPageDto dto = json.Deserialize(FiveSingJsonContext.Default.FiveSingSongPageDto)
-            ?? new FiveSingSongPageDto();
+        FiveSingSongPageDto dto = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
 
         List<FiveSingSongDto> songs = dto.Data ?? [];
         List<RawSong> items = [];
@@ -286,17 +281,14 @@ internal sealed class FiveSingProvider
     private async Task<MediaSource?> FetchMediaAsync(SongId id, CancellationToken cancellationToken)
     {
         (string songId, string? typeEname) = FiveSingSongMapper.ParseSongId(id.Value);
-        JsonObject item = new() { ["id"] = songId, ["typeEname"] = typeEname };
 
-        JsonObject? json = await _api.GetMediaSourceAsync(item, ToQualityString(AudioQuality.High))
+        FiveSingMediaDto? dto = await _api.GetMediaSourceAsync(
+                songId,
+                typeEname ?? "yc",
+                ToQualityString(AudioQuality.High)
+            )
             .ConfigureAwait(false);
 
-        if (json is null)
-        {
-            return null;
-        }
-
-        FiveSingMediaDto? dto = json.Deserialize(FiveSingJsonContext.Default.FiveSingMediaDto);
         return FiveSingSongMapper.FromMedia(dto, AudioQuality.High);
     }
 
@@ -361,25 +353,10 @@ internal sealed class FiveSingProvider
             return cached;
         }
 
-        List<FiveSingSongDto> songs = await FetchAlbumSongsRawAsync(id, cancellationToken)
-            .ConfigureAwait(false);
-        RawSong[] snapshot = ToSnapshot(songs);
+        FiveSingAlbumSongsDto dto = await _api.GetAlbumInfoAsync(id.Value).ConfigureAwait(false);
+        RawSong[] snapshot = ToSnapshot(dto.MusicList ?? []);
         _snapshots.Set(key, snapshot);
         return snapshot;
-    }
-
-    private async Task<List<FiveSingSongDto>> FetchAlbumSongsRawAsync(
-        AlbumId id,
-        CancellationToken cancellationToken
-    )
-    {
-        JsonObject albumItem = new() { ["id"] = id.Value };
-        JsonObject json = await _api.GetAlbumInfoAsync(albumItem).ConfigureAwait(false);
-        FiveSingAlbumSongsDto? dto = json.Deserialize(
-            FiveSingJsonContext.Default.FiveSingAlbumSongsDto
-        );
-
-        return dto?.MusicList ?? [];
     }
 
     private static RawSong[] ToSnapshot(List<FiveSingSongDto> songs)

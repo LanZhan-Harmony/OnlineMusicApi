@@ -6,7 +6,6 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NoWarn>$(NoWarn);IL2026;IL3050</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>OnlineMusicApi</PackageId>
     <Description>多源在线音乐聚合 API 客户端</Description>

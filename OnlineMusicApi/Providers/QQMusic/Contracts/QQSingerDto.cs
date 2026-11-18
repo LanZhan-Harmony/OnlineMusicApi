@@ -1,11 +1,11 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace OnlineMusicApi.Internal.Contracts.QQMusic;
 
 internal sealed class QQSingerDto
 {
     [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    public long Id { get; set; }
 
     [JsonPropertyName("mid")]
     public string? Mid { get; set; }

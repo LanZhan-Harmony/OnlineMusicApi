@@ -1,13 +1,13 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Globalization;
 using System.Net;
 using System.Text;
-using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using OnlineMusicApi.Internal.Contracts.KuwoMusic;
+using OnlineMusicApi.Internal.Infrastructure.Http;
+
 namespace OnlineMusicApi.Internal.Providers.KuwoMusic.Protocol;
 
-/// <summary>
-/// 酷我音乐 API
-/// </summary>
 internal sealed class KuwoMusicApiService : IDisposable
 {
     private const int PageSize = 20;
@@ -32,40 +32,95 @@ internal sealed class KuwoMusicApiService : IDisposable
         _ownsClient = false;
     }
 
-    public Task<JsonObject> SearchMusicAsync(string query, int page) =>
-        SearchAsync(query, page, "music");
-
-    public Task<JsonObject> SearchAlbumAsync(string query, int page) =>
-        SearchAsync(query, page, "album");
-
-    public Task<JsonObject> SearchArtistAsync(string query, int page) =>
-        SearchAsync(query, page, "artist");
-
-    public Task<JsonObject> SearchMusicSheetAsync(string query, int page) =>
-        SearchAsync(query, page, "playlist");
-
-    public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string? quality)
+    public async Task<KuwoSongPageDto> SearchMusicAsync(string query, int page)
     {
-        ArgumentNullException.ThrowIfNull(musicItem);
+        KuwoMusicSearchResponseDto? response = await SearchAsync(
+                query,
+                page,
+                "music",
+                KuwoJsonContext.Default.KuwoMusicSearchResponseDto
+            )
+            .ConfigureAwait(false);
 
-        string? id = GetString(musicItem, "id");
-        if (string.IsNullOrWhiteSpace(id))
+        return new KuwoSongPageDto
         {
-            return null;
-        }
+            IsEnd = IsEnd(response?.PageNumber, response?.PageSize, response?.Total, page),
+            Data = response?.AbsList?.Where(IsPlayableSong).ToList() ?? [],
+        };
+    }
 
-        JsonObject res = await GetJsonAsync(
-            "https://antiserver.kuwo.cn/anti.s",
-            new QueryCollection
-            {
-                { "type", "convert_url3" },
-                { "rid", id },
-                { "format", "mp3" },
-            }
-        );
+    public async Task<KuwoAlbumPageDto> SearchAlbumsAsync(string query, int page)
+    {
+        KuwoAlbumSearchResponseDto? response = await SearchAsync(
+                query,
+                page,
+                "album",
+                KuwoJsonContext.Default.KuwoAlbumSearchResponseDto
+            )
+            .ConfigureAwait(false);
 
-        string? url = GetString(res, "url");
-        return string.IsNullOrWhiteSpace(url) ? null : new JsonObject { ["url"] = url };
+        return new KuwoAlbumPageDto
+        {
+            IsEnd = IsEnd(response?.PageNumber, response?.PageSize, response?.Total, page),
+            Data = response?.AlbumList ?? [],
+        };
+    }
+
+    public async Task<KuwoArtistPageDto> SearchArtistsAsync(string query, int page)
+    {
+        KuwoArtistSearchResponseDto? response = await SearchAsync(
+                query,
+                page,
+                "artist",
+                KuwoJsonContext.Default.KuwoArtistSearchResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return new KuwoArtistPageDto
+        {
+            IsEnd = IsEnd(response?.PageNumber, response?.PageSize, response?.Total, page),
+            Data = response?.AbsList ?? [],
+        };
+    }
+
+    public async Task<KuwoPlaylistPageDto> SearchPlaylistsAsync(string query, int page)
+    {
+        KuwoPlaylistSearchResponseDto? response = await SearchAsync(
+                query,
+                page,
+                "playlist",
+                KuwoJsonContext.Default.KuwoPlaylistSearchResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return new KuwoPlaylistPageDto
+        {
+            IsEnd = IsEnd(response?.PageNumber, response?.PageSize, response?.Total, page),
+            Data = response?.AbsList ?? [],
+        };
+    }
+
+    public async Task<KuwoMediaDto?> GetMediaSourceAsync(string songId, string? quality)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(songId);
+
+        QueryCollection query = new()
+        {
+            { "type", "convert_url3" },
+            { "rid", songId },
+            { "format", "mp3" },
+        };
+
+        KuwoMediaResponseDto? response = await GetJsonAsync(
+                "https://antiserver.kuwo.cn/anti.s",
+                query,
+                KuwoJsonContext.Default.KuwoMediaResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return string.IsNullOrWhiteSpace(response?.Url)
+            ? null
+            : new KuwoMediaDto { Url = response.Url };
     }
 
     public async Task<string> GetArtistPageHtmlAsync(string artistId)
@@ -73,10 +128,11 @@ internal sealed class KuwoMusicApiService : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(artistId);
 
         return await GetStringResponseAsync(
-            HttpMethod.Get,
-            $"https://www.kuwo.cn/singer_detail/{Uri.EscapeDataString(artistId)}",
-            null
-        );
+                HttpMethod.Get,
+                $"https://www.kuwo.cn/singer_detail/{Uri.EscapeDataString(artistId)}",
+                null
+            )
+            .ConfigureAwait(false);
     }
 
     public async Task<string> GetAlbumPageHtmlAsync(string albumId)
@@ -84,312 +140,185 @@ internal sealed class KuwoMusicApiService : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(albumId);
 
         return await GetStringResponseAsync(
-            HttpMethod.Get,
-            $"https://www.kuwo.cn/album_detail/{Uri.EscapeDataString(albumId)}",
-            null
-        );
+                HttpMethod.Get,
+                $"https://www.kuwo.cn/album_detail/{Uri.EscapeDataString(albumId)}",
+                null
+            )
+            .ConfigureAwait(false);
     }
 
-    public async Task<JsonObject> GetArtistWorksAsync(JsonObject artistItem, int page, string type)
+    public async Task<KuwoLyricDto> GetLyricAsync(string songId)
     {
-        ArgumentNullException.ThrowIfNull(artistItem);
+        ArgumentException.ThrowIfNullOrWhiteSpace(songId);
 
-        return type switch
-        {
-            "album" => await GetArtistAlbumWorksAsync(artistItem, page),
-            _ => new JsonObject { ["isEnd"] = true, ["data"] = new JsonArray() },
-        };
-    }
-
-    public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
-    {
-        ArgumentNullException.ThrowIfNull(musicItem);
-
-        string id = GetString(musicItem, "id")
-            ?? throw new ArgumentException("musicItem.id 不能为空", nameof(musicItem));
-
-        JsonObject res = await GetJsonAsync(
-            "http://m.kuwo.cn/newh5/singles/songinfoandlrc",
-            new QueryCollection { { "musicId", id }, { "httpStatus", "1" } }
-        );
+        QueryCollection query = new() { { "musicId", songId }, { "httpStatus", "1" } };
+        KuwoLyricResponseDto? response = await GetJsonAsync(
+                "http://m.kuwo.cn/newh5/singles/songinfoandlrc",
+                query,
+                KuwoJsonContext.Default.KuwoLyricResponseDto
+            )
+            .ConfigureAwait(false);
 
         StringBuilder lines = new();
-        foreach (JsonNode? item in res["data"]?["lrclist"]?.AsArray() ?? [])
+        foreach (KuwoLyricLineDto line in response?.Data?.LrcList ?? [])
         {
-            if (item is not JsonObject lyricLine)
-            {
-                continue;
-            }
-
-            string time = GetString(lyricLine, "time") ?? string.Empty;
-            string lyric = GetString(lyricLine, "lineLyric") ?? string.Empty;
             if (lines.Length > 0)
             {
                 lines.Append('\n');
             }
 
-            lines.Append('[').Append(time).Append(']').Append(lyric);
+            lines
+                .Append('[')
+                .Append(line.Time ?? string.Empty)
+                .Append(']')
+                .Append(line.LineLyric ?? string.Empty);
         }
 
-        return new JsonObject { ["rawLrc"] = lines.ToString() };
+        return new KuwoLyricDto { RawLrc = lines.ToString() };
     }
 
-    public async Task<JsonObject> GetAlbumInfoAsync(JsonObject albumItem)
+    public async Task<KuwoAlbumSongsDto> GetAlbumInfoAsync(string albumId)
     {
-        ArgumentNullException.ThrowIfNull(albumItem);
+        ArgumentException.ThrowIfNullOrWhiteSpace(albumId);
 
-        string albumId = GetString(albumItem, "id")
-            ?? throw new ArgumentException("albumItem.id 不能为空", nameof(albumItem));
+        QueryCollection query = BuildAlbumInfoQuery(albumId);
+        KuwoAlbumInfoResponseDto? response = await GetJsonAsync(
+                "http://search.kuwo.cn/r.s",
+                query,
+                KuwoJsonContext.Default.KuwoAlbumInfoResponseDto
+            )
+            .ConfigureAwait(false);
 
-        JsonObject res = await GetJsonAsync(
-            "http://search.kuwo.cn/r.s",
-            new QueryCollection
-            {
-                { "pn", "0" },
-                { "rn", "100" },
-                { "albumid", albumId },
-                { "stype", "albuminfo" },
-                { "sortby", "0" },
-                { "alflac", "1" },
-                { "show_copyright_off", "1" },
-                { "pcmp4", "1" },
-                { "encoding", "utf8" },
-                { "plat", "pc" },
-                { "thost", "search.kuwo.cn" },
-                { "vipver", "MUSIC_9.1.1.2_BCS2" },
-                { "devid", "38668888" },
-                { "newver", "1" },
-                { "pcjson", "1" },
-            }
-        );
-
-        JsonArray musicList = [];
-        foreach (JsonNode? song in res["musiclist"]?.AsArray() ?? [])
+        return new KuwoAlbumSongsDto
         {
-            if (song is not JsonObject item || !MusicListFilter(item))
-            {
-                continue;
-            }
-
-            musicList.Add(
-                new JsonObject
-                {
-                    ["id"] = GetString(item, "id"),
-                    ["artwork"] = GetString(albumItem, "artwork") ?? GetString(res, "img"),
-                    ["title"] = HtmlDecode(GetString(item, "name")),
-                    ["artist"] = HtmlDecode(GetString(item, "artist")),
-                    ["album"] = HtmlDecode(GetString(item, "album")),
-                    ["albumId"] = albumId,
-                    ["artistId"] = GetString(item, "artistid"),
-                    ["formats"] = GetString(item, "formats"),
-                    ["duration"] = ParseInt(GetString(item, "duration")) * 1000L,
-                }
-            );
-        }
-
-        return new JsonObject { ["musicList"] = musicList };
+            MusicList = response?.MusicList?.Where(IsPlayableSong).ToList() ?? [],
+        };
     }
 
-    public async Task<JsonArray> GetMusicSheetSongsAsync(string sheetId)
+    public async Task<List<KuwoSongDto>> GetMusicSheetSongsAsync(string sheetId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sheetId);
 
+        List<KuwoSongDto> songs = [];
         int page = 1;
         int totalPage = 30;
-        JsonArray musicList = [];
 
         while (page < totalPage)
         {
             try
             {
-                JsonObject data = await GetMusicSheetResponseByIdAsync(sheetId, page, 80);
-                int total = data["total"]?.GetValue<int>() ?? 0;
+                KuwoPlaylistResponseDto? data = await GetMusicSheetResponseByIdAsync(
+                        sheetId,
+                        page,
+                        80
+                    )
+                    .ConfigureAwait(false);
+
+                int total = ParseInt(data?.Total);
                 totalPage = Math.Max(1, (int)Math.Ceiling(total / 80d));
-
-                foreach (
-                    JsonNode? item in data["musicList"]?.AsArray()
-                        ?? data["musiclist"]?.AsArray()
-                        ?? []
-                )
-                {
-                    if (item is not JsonObject song || !MusicListFilter(song))
-                    {
-                        continue;
-                    }
-
-                    musicList.Add(
-                        new JsonObject
-                        {
-                            ["id"] = GetString(song, "id"),
-                            ["title"] = HtmlDecode(GetString(song, "name")),
-                            ["artist"] = HtmlDecode(GetString(song, "artist")),
-                            ["album"] = HtmlDecode(GetString(song, "album")),
-                            ["albumId"] = GetString(song, "albumid"),
-                            ["artistId"] = GetString(song, "artistid"),
-                            ["formats"] = GetString(song, "formats"),
-                            ["duration"] = ParseInt(GetString(song, "duration")) * 1000L,
-                        }
-                    );
-                }
+                songs.AddRange(
+                    (data?.MusicList ?? data?.MusicListLower ?? []).Where(IsPlayableSong)
+                );
             }
             catch
             {
                 // 与原实现一致：单页失败时忽略并继续。
             }
 
-            await Task.Delay(Random.Shared.Next(200, 301));
+            await Task.Delay(Random.Shared.Next(200, 301)).ConfigureAwait(false);
             page++;
         }
 
-        return musicList;
+        return songs;
     }
 
-    private async Task<JsonObject> SearchAsync(string query, int page, string searchType)
+    public async Task<KuwoAlbumPageDto> GetArtistAlbumsAsync(string artistId, int page)
     {
-        JsonObject res = await GetJsonAsync(
-            "http://search.kuwo.cn/r.s",
-            new QueryCollection
-            {
-                { "all", query },
-                { "ft", searchType },
-                { "itemset", "web_2013" },
-                { "client", "kt" },
-                { "pn", (page - 1).ToString(CultureInfo.InvariantCulture) },
-                { "rn", PageSize.ToString(CultureInfo.InvariantCulture) },
-                { "rformat", "json" },
-                { "encoding", "utf8" },
-                { "pcjson", "1" },
-            }
-        );
+        ArgumentException.ThrowIfNullOrWhiteSpace(artistId);
 
-        JsonArray mapped = [];
-        IEnumerable<JsonNode?> list = searchType switch
+        QueryCollection query = BuildArtistAlbumQuery(artistId, page);
+        KuwoArtistAlbumResponseDto? response = await GetJsonAsync(
+                "http://search.kuwo.cn/r.s",
+                query,
+                KuwoJsonContext.Default.KuwoArtistAlbumResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return new KuwoAlbumPageDto
         {
-            "music" => res["abslist"]?.AsArray() ?? [],
-            "album" => res["albumlist"]?.AsArray() ?? [],
-            "artist" => res["abslist"]?.AsArray() ?? [],
-            "playlist" => res["abslist"]?.AsArray() ?? [],
-            _ => [],
+            IsEnd = IsEnd(
+                response?.PageNumber,
+                PageSize.ToString(CultureInfo.InvariantCulture),
+                response?.Total,
+                page
+            ),
+            Data = response?.AlbumList ?? [],
         };
-
-        foreach (JsonNode? item in list)
-        {
-            if (item is not JsonObject source)
-            {
-                continue;
-            }
-
-            if (searchType is "music" && !MusicListFilter(source))
-            {
-                continue;
-            }
-
-            mapped.Add(
-                searchType switch
-                {
-                    "music" => FormatMusicItem(source),
-                    "album" => FormatAlbumItem(source),
-                    "artist" => FormatArtistItem(source),
-                    "playlist" => FormatMusicSheet(source),
-                    _ => source.DeepClone(),
-                }
-            );
-        }
-
-        int pn = ParseInt(GetString(res, "PN"));
-        int rn = ParseInt(GetString(res, "RN"));
-        int total = ParseInt(GetString(res, "TOTAL"));
-
-        return new JsonObject { ["isEnd"] = (pn + 1) * rn >= total, ["data"] = mapped };
     }
 
-    private async Task<JsonObject> GetArtistAlbumWorksAsync(JsonObject artistItem, int page)
+    public void Dispose()
     {
-        string id = GetString(artistItem, "id")
-            ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
-
-        JsonObject res = await GetJsonAsync(
-            "http://search.kuwo.cn/r.s",
-            new QueryCollection
-            {
-                { "pn", (page - 1).ToString(CultureInfo.InvariantCulture) },
-                { "rn", PageSize.ToString(CultureInfo.InvariantCulture) },
-                { "artistid", id },
-                { "stype", "albumlist" },
-                { "sortby", "1" },
-                { "alflac", "1" },
-                { "show_copyright_off", "1" },
-                { "pcmp4", "1" },
-                { "encoding", "utf8" },
-                { "plat", "pc" },
-                { "thost", "search.kuwo.cn" },
-                { "vipver", "MUSIC_9.1.1.2_BCS2" },
-                { "devid", "38668888" },
-                { "newver", "1" },
-                { "pcjson", "1" },
-            }
-        );
-
-        JsonArray albums = [];
-        foreach (JsonNode? item in res["albumlist"]?.AsArray() ?? [])
+        if (_ownsClient)
         {
-            if (item is not JsonObject album)
-            {
-                continue;
-            }
-
-            albums.Add(FormatAlbumItem(album));
+            _client.Dispose();
         }
-
-        int pn = ParseInt(GetString(res, "pn"));
-        int total = ParseInt(GetString(res, "total"));
-        return new JsonObject { ["isEnd"] = (pn + 1) * PageSize >= total, ["data"] = albums };
     }
 
-    private async Task<JsonObject> GetMusicSheetResponseByIdAsync(string id, int page, int pageSize)
+    private async Task<T?> SearchAsync<T>(
+        string query,
+        int page,
+        string searchType,
+        JsonTypeInfo<T> typeInfo
+    )
+        where T : class
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+
         return await GetJsonAsync(
-            "http://nplserver.kuwo.cn/pl.svc",
-            new QueryCollection
-            {
-                { "op", "getlistinfo" },
-                { "pid", id },
-                { "pn", (page - 1).ToString(CultureInfo.InvariantCulture) },
-                { "rn", pageSize.ToString(CultureInfo.InvariantCulture) },
-                { "encode", "utf8" },
-                { "keyset", "pl2012" },
-                { "vipver", "MUSIC_9.1.1.2_BCS2" },
-                { "newver", "1" },
-            }
-        );
+                "http://search.kuwo.cn/r.s",
+                BuildSearchQuery(query, page, searchType),
+                typeInfo
+            )
+            .ConfigureAwait(false);
     }
 
-    private async Task<JsonObject> GetJsonAsync(
-        string url,
-        IEnumerable<KeyValuePair<string, string>>? query = null
+    private async Task<KuwoPlaylistResponseDto?> GetMusicSheetResponseByIdAsync(
+        string id,
+        int page,
+        int pageSize
     )
     {
-        string text = await GetStringResponseAsync(HttpMethod.Get, url, query);
-
-        try
+        QueryCollection query = new()
         {
-            JsonNode? node = JsonNode.Parse(text);
-            if (node is JsonObject jsonObject)
-            {
-                return jsonObject;
-            }
+            { "op", "getlistinfo" },
+            { "pid", id },
+            { "pn", (page - 1).ToString(CultureInfo.InvariantCulture) },
+            { "rn", pageSize.ToString(CultureInfo.InvariantCulture) },
+            { "encode", "utf8" },
+            { "keyset", "pl2012" },
+            { "vipver", "MUSIC_9.1.1.2_BCS2" },
+            { "newver", "1" },
+        };
 
-            if (node is JsonArray jsonArray)
-            {
-                return new JsonObject { ["array"] = jsonArray };
-            }
-        }
-        catch
-        {
-            // 某些接口偶发返回非 JSON；保持空对象避免调用方崩溃。
-        }
+        return await GetJsonAsync(
+                "http://nplserver.kuwo.cn/pl.svc",
+                query,
+                KuwoJsonContext.Default.KuwoPlaylistResponseDto
+            )
+            .ConfigureAwait(false);
+    }
 
-        return [];
+    private async Task<T?> GetJsonAsync<T>(
+        string url,
+        QueryCollection? query,
+        JsonTypeInfo<T> typeInfo
+    )
+        where T : class
+    {
+        string text = await GetStringResponseAsync(HttpMethod.Get, url, query)
+            .ConfigureAwait(false);
+        string json = ExtractJson(text);
+        return JsonSerializer.Deserialize(json, typeInfo);
     }
 
     private async Task<string> GetStringResponseAsync(
@@ -404,137 +333,118 @@ internal sealed class KuwoMusicApiService : IDisposable
             { "Referer", "http://www.kuwo.cn" },
         };
 
-        using HttpResponseMessage response = await _client.SendAsync(
-            method,
-            url,
-            query,
-            headers,
-            content: (string?)null,
-            contentType: null
-        );
+        using HttpResponseMessage response = await _client
+            .SendAsync(method, url, query, headers, content: (string?)null, contentType: null)
+            .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
-    private static JsonObject FormatMusicItem(JsonObject source)
+    private static QueryCollection BuildSearchQuery(string query, int page, string searchType)
     {
-        string musicRid = GetString(source, "MUSICRID")
-            ?.Replace("MUSIC_", string.Empty, StringComparison.Ordinal)
-            ?? string.Empty;
-
-        long duration =
-            ParseInt(GetString(source, "DURATION") ?? GetString(source, "duration")) * 1000L;
-
-        return new JsonObject
+        return new QueryCollection
         {
-            ["id"] = musicRid,
-            ["artwork"] = ArtworkShortToLong(GetString(source, "web_albumpic_short")),
-            ["title"] = HtmlDecode(GetString(source, "NAME")),
-            ["artist"] = HtmlDecode(GetString(source, "ARTIST")),
-            ["album"] = HtmlDecode(GetString(source, "ALBUM")),
-            ["albumId"] = GetString(source, "ALBUMID"),
-            ["artistId"] = GetString(source, "ARTISTID"),
-            ["formats"] = GetString(source, "FORMATS"),
-            ["duration"] = duration,
+            { "all", query },
+            { "ft", searchType },
+            { "itemset", "web_2013" },
+            { "client", "kt" },
+            { "pn", (page - 1).ToString(CultureInfo.InvariantCulture) },
+            { "rn", PageSize.ToString(CultureInfo.InvariantCulture) },
+            { "rformat", "json" },
+            { "encoding", "utf8" },
+            { "pcjson", "1" },
         };
     }
 
-    private static JsonObject FormatAlbumItem(JsonObject source) =>
-        new()
-        {
-            ["id"] = GetString(source, "albumid"),
-            ["artist"] = HtmlDecode(GetString(source, "artist")),
-            ["title"] = HtmlDecode(GetString(source, "name")),
-            ["artwork"] = GetString(source, "img") ?? ArtworkShortToLong(GetString(source, "pic")),
-            ["description"] = HtmlDecode(GetString(source, "info")),
-            ["date"] = GetString(source, "pub"),
-            ["artistId"] = GetString(source, "artistid"),
-        };
-
-    private static JsonObject FormatArtistItem(JsonObject source) =>
-        new()
-        {
-            ["id"] = GetString(source, "ARTISTID"),
-            ["avatar"] = GetString(source, "hts_PICPATH"),
-            ["name"] = HtmlDecode(GetString(source, "ARTIST")),
-            ["artistId"] = GetString(source, "ARTISTID"),
-            ["description"] = HtmlDecode(GetString(source, "desc")),
-            ["worksNum"] = GetString(source, "SONGNUM"),
-        };
-
-    private static JsonObject FormatMusicSheet(JsonObject source) =>
-        new()
-        {
-            ["id"] = GetString(source, "playlistid"),
-            ["title"] = HtmlDecode(GetString(source, "name")),
-            ["artist"] = HtmlDecode(GetString(source, "nickname")),
-            ["artwork"] = GetString(source, "pic"),
-            ["playCount"] = GetString(source, "playcnt"),
-            ["description"] = HtmlDecode(GetString(source, "intro")),
-            ["worksNum"] = GetString(source, "songnum"),
-        };
-
-    private static bool MusicListFilter(JsonObject item) =>
-        !string.Equals(
-            GetString(item["payInfo"] as JsonObject, "listen_fragment"),
-            "1",
-            StringComparison.Ordinal
-        );
-
-    private static string? ArtworkShortToLong(string? albumPicShort)
+    private static QueryCollection BuildAlbumInfoQuery(string albumId)
     {
-        if (string.IsNullOrWhiteSpace(albumPicShort))
+        return new QueryCollection
         {
-            return null;
+            { "pn", "0" },
+            { "rn", "100" },
+            { "albumid", albumId },
+            { "stype", "albuminfo" },
+            { "sortby", "0" },
+            { "alflac", "1" },
+            { "show_copyright_off", "1" },
+            { "pcmp4", "1" },
+            { "encoding", "utf8" },
+            { "plat", "pc" },
+            { "thost", "search.kuwo.cn" },
+            { "vipver", "MUSIC_9.1.1.2_BCS2" },
+            { "devid", "38668888" },
+            { "newver", "1" },
+            { "pcjson", "1" },
+        };
+    }
+
+    private static QueryCollection BuildArtistAlbumQuery(string artistId, int page)
+    {
+        return new QueryCollection
+        {
+            { "pn", (page - 1).ToString(CultureInfo.InvariantCulture) },
+            { "rn", PageSize.ToString(CultureInfo.InvariantCulture) },
+            { "artistid", artistId },
+            { "stype", "albumlist" },
+            { "sortby", "1" },
+            { "alflac", "1" },
+            { "show_copyright_off", "1" },
+            { "pcmp4", "1" },
+            { "encoding", "utf8" },
+            { "plat", "pc" },
+            { "thost", "search.kuwo.cn" },
+            { "vipver", "MUSIC_9.1.1.2_BCS2" },
+            { "devid", "38668888" },
+            { "newver", "1" },
+            { "pcjson", "1" },
+        };
+    }
+
+    private static string ExtractJson(string text)
+    {
+        int start = text.IndexOf('{');
+        int end = text.LastIndexOf('}');
+        return start >= 0 && end > start ? text[start..(end + 1)] : text;
+    }
+
+    private static bool IsPlayableSong(KuwoSongDto song)
+    {
+        return !string.Equals(song.PayInfo?.ListenFragment, "1", StringComparison.Ordinal);
+    }
+
+    private static bool IsEnd(
+        string? pageNumber,
+        string? pageSize,
+        string? total,
+        int requestedPage
+    )
+    {
+        int pn = ParseInt(pageNumber);
+        int rn = ParseInt(pageSize);
+        int count = ParseInt(total);
+
+        if (count <= 0)
+        {
+            return true;
         }
 
-        int firstSlash = albumPicShort.IndexOf('/', StringComparison.Ordinal);
-        return firstSlash == -1
-            ? null
-            : $"https://img4.kuwo.cn/star/albumcover/256{albumPicShort[firstSlash..]}";
+        return (pn + 1) * rn >= count;
     }
 
-    private static string HtmlDecode(string? text) => WebUtility.HtmlDecode(text ?? string.Empty);
-
-    private static string? GetString(JsonObject? source, string key)
+    private static int ParseInt(string? value)
     {
-        if (
-            source is null
-            || !source.TryGetPropertyValue(key, out JsonNode? value)
-            || value is null
+        return int.TryParse(
+            value,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out int number
         )
-        {
-            return null;
-        }
-
-        return value switch
-        {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
-                intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
-                longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
-                doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
-                boolValue.ToString(),
-            _ => value.ToJsonString(),
-        };
-    }
-
-    private static int ParseInt(string? value) =>
-        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)
             ? number
             : 0;
+    }
 
-    private static string ChooseUserAgent() =>
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
-
-    public void Dispose()
+    private static string ChooseUserAgent()
     {
-        if (_ownsClient)
-        {
-            _client.Dispose();
-        }
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
     }
 }

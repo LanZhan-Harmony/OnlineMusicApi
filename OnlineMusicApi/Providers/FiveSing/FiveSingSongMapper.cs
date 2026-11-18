@@ -1,5 +1,7 @@
+using System.Globalization;
+using System.Net;
+using System.Text.RegularExpressions;
 using OnlineMusicApi.Internal.Contracts.FiveSing;
-using OnlineMusicApi.Internal.Providers.Shared;
 
 namespace OnlineMusicApi.Internal.Providers.FiveSing;
 
@@ -28,25 +30,32 @@ internal static class FiveSingSongMapper
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        if (string.IsNullOrWhiteSpace(dto.Id))
+        long rawId = dto.SongId > 0 ? dto.SongId : dto.AlbumSongId;
+        if (rawId <= 0)
         {
             return null;
         }
 
+        string id = rawId.ToString(CultureInfo.InvariantCulture);
+        string typeEname = First(dto.TypeEname, dto.Sk);
+        string artist = First(dto.Singer, dto.User?.Name);
+        long singerId = dto.SingerId > 0 ? dto.SingerId : dto.User?.Id ?? 0;
+
         return new Song
         {
-            Id = SongIdOf(dto.Id, dto.TypeEname ?? dto.Type),
-            Title = dto.Title ?? string.Empty,
-            Artists = string.IsNullOrWhiteSpace(dto.Artist)
-                ? []
-                :
-                [
-                    new ArtistRef
-                    {
-                        Id = ArtistIdOf(dto.SingerId ?? string.Empty),
-                        Name = dto.Artist,
-                    },
-                ],
+            Id = SongIdOf(id, typeEname),
+            Title = HtmlToText(First(dto.SongName, dto.SequenceName)),
+            Artists =
+                artist.Length == 0
+                    ? []
+                    :
+                    [
+                        new ArtistRef
+                        {
+                            Id = ArtistIdOf(singerId.ToString(CultureInfo.InvariantCulture)),
+                            Name = HtmlToText(artist),
+                        },
+                    ],
         };
     }
 
@@ -56,14 +65,22 @@ internal static class FiveSingSongMapper
 
         return new Album
         {
-            Id = AlbumIdOf(dto.Id ?? string.Empty),
-            Title = dto.Title ?? string.Empty,
-            Artists = string.IsNullOrWhiteSpace(dto.Artist)
+            Id = AlbumIdOf(dto.SongListId ?? string.Empty),
+            Title = HtmlToText(dto.Title),
+            Artists = string.IsNullOrWhiteSpace(dto.UserName)
                 ? []
-                : [new ArtistRef { Id = ArtistIdOf(string.Empty), Name = dto.Artist }],
-            Year = ParseYear(dto.Date),
-            Description = dto.Description ?? string.Empty,
-            CoverUrl = dto.Artwork ?? string.Empty,
+                :
+                [
+                    new ArtistRef
+                    {
+                        Id = ArtistIdOf(string.Empty),
+                        Name = HtmlToText(dto.UserName),
+                    },
+                ],
+            Year = ParseYear(dto.CreateTime),
+            SongCount = dto.SongCount,
+            Description = HtmlToText(dto.Content),
+            CoverUrl = dto.PictureUrl ?? string.Empty,
         };
     }
 
@@ -73,11 +90,11 @@ internal static class FiveSingSongMapper
 
         return new Artist
         {
-            Id = ArtistIdOf(dto.Id ?? string.Empty),
-            Name = dto.Name ?? string.Empty,
-            SongCount = ValueNormalizer.ToInt(dto.WorksNum),
+            Id = ArtistIdOf(dto.Id.ToString(CultureInfo.InvariantCulture)),
+            Name = HtmlToText(dto.NickName),
+            SongCount = dto.TotalSong,
             Description = dto.Description ?? string.Empty,
-            AvatarUrl = dto.Avatar ?? string.Empty,
+            AvatarUrl = dto.PictureUrl ?? string.Empty,
         };
     }
 
@@ -115,14 +132,30 @@ internal static class FiveSingSongMapper
         };
     }
 
+    private static string HtmlToText(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return string.Empty;
+        }
+
+        return WebUtility.HtmlDecode(Regex.Replace(html, "<.*?>", string.Empty)).Trim();
+    }
+
+    private static string First(params string?[] values)
+    {
+        return values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
+            ?? string.Empty;
+    }
+
     private static int? ParseYear(string? value)
     {
         if (
             value is { Length: >= 4 }
             && int.TryParse(
                 value.AsSpan(0, 4),
-                System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
                 out int year
             )
         )

@@ -1,8 +1,7 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;
 
@@ -17,59 +16,71 @@ internal static class Crypto
     private static readonly byte[] eapiKey = Encoding.ASCII.GetBytes("e82ckenh8dichen8");
     private static RSAParameters? _cachedPublicKey;
 
-    public static Dictionary<string, string> WEApi(object obj)
+    public static Dictionary<string, string> WEApi(Dictionary<string, string> data)
     {
-        string text = JsonSerializer.Serialize(obj);
+        string text = ToJsonObject(data).ToJsonString();
         byte[] secretKey = RandomNumberGenerator.GetBytes(16);
         secretKey = [.. secretKey.Select(n => (byte)base62[n % 62])];
+
         return new()
         {
             {
                 "params",
-                AesEncrypt(
-                        AesEncrypt(text.ToByteArrayUtf8(), CipherMode.CBC, presetKey, iv)
-                            .ToBase64String()
-                            .ToByteArrayUtf8(),
+                Base64(
+                    AesEncrypt(
+                        Utf8(Base64(AesEncrypt(Utf8(text), CipherMode.CBC, presetKey, iv))),
                         CipherMode.CBC,
                         secretKey,
                         iv
                     )
-                    .ToBase64String()
+                )
             },
-            { "encSecKey", RsaEncrypt([.. secretKey.Reverse()]).ToHexStringLower() },
+            { "encSecKey", HexLower(RsaEncrypt([.. secretKey.Reverse()])) },
         };
     }
 
-    public static Dictionary<string, string> LinuxApi(object obj)
+    public static Dictionary<string, string> LinuxApi(JsonObject payload)
     {
-        string text = JsonSerializer.Serialize(obj);
+        string text = payload.ToJsonString();
         return new()
         {
-            {
-                "eparams",
-                AesEncrypt(text.ToByteArrayUtf8(), CipherMode.ECB, linuxapiKey, null)
-                    .ToHexStringUpper()
-            },
+            { "eparams", HexUpper(AesEncrypt(Utf8(text), CipherMode.ECB, linuxapiKey, null)) },
         };
     }
 
-    public static Dictionary<string, string> EApi(string url, object obj)
+    public static Dictionary<string, string> EApi(string url, Dictionary<string, string> data)
     {
-        string text = JsonSerializer.Serialize(obj);
+        string text = ToJsonObject(data).ToJsonString();
         string message = $"nobody{url}use{text}md5forencrypt";
-        string digest = message.ToByteArrayUtf8().ComputeMd5().ToHexStringLower();
-        string data = $"{url}-36cd479b6b5-{text}-36cd479b6b5-{digest}";
+        string digest = HexLower(MD5.HashData(Utf8(message)));
+        string payload = $"{url}-36cd479b6b5-{text}-36cd479b6b5-{digest}";
         return new()
         {
-            {
-                "params",
-                AesEncrypt(data.ToByteArrayUtf8(), CipherMode.ECB, eapiKey, null).ToHexStringUpper()
-            },
+            { "params", HexUpper(AesEncrypt(Utf8(payload), CipherMode.ECB, eapiKey, null)) },
         };
     }
 
     public static byte[] Decrypt(byte[] cipherBuffer) =>
         AesDecrypt(cipherBuffer, CipherMode.ECB, eapiKey, null);
+
+    private static JsonObject ToJsonObject(Dictionary<string, string> data)
+    {
+        JsonObject result = [];
+        foreach ((string key, string value) in data)
+        {
+            result[key] = value;
+        }
+
+        return result;
+    }
+
+    private static byte[] Utf8(string value) => Encoding.UTF8.GetBytes(value);
+
+    private static string Base64(byte[] value) => Convert.ToBase64String(value);
+
+    private static string HexLower(byte[] value) => Convert.ToHexString(value).ToLowerInvariant();
+
+    private static string HexUpper(byte[] value) => Convert.ToHexString(value);
 
     private static byte[] AesEncrypt(byte[] buffer, CipherMode mode, byte[] key, byte[]? iv)
     {

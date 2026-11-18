@@ -1,24 +1,24 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace OnlineMusicApi.Internal.Contracts.FiveSing;
 
 internal sealed class FiveSingArtistDto
 {
     [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    public long Id { get; set; }
 
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
+    [JsonPropertyName("nickName")]
+    public string? NickName { get; set; }
 
-    [JsonPropertyName("fans")]
-    public string? Fans { get; set; }
-
-    [JsonPropertyName("avatar")]
-    public string? Avatar { get; set; }
+    [JsonPropertyName("pictureUrl")]
+    public string? PictureUrl { get; set; }
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
-    [JsonPropertyName("worksNum")]
-    public string? WorksNum { get; set; }
+    [JsonPropertyName("fans")]
+    public int? Fans { get; set; }
+
+    [JsonPropertyName("totalSong")]
+    public int? TotalSong { get; set; }
 }

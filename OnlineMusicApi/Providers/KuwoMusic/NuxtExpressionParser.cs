@@ -341,12 +341,15 @@ internal static class NuxtExpressionParser
                         builder.Append('\f');
                         break;
                     case 'u':
-                        if (_position + 4 <= _text.Length
+                        if (
+                            _position + 4 <= _text.Length
                             && int.TryParse(
                                 _text.AsSpan(_position, 4),
                                 NumberStyles.HexNumber,
                                 CultureInfo.InvariantCulture,
-                                out int code))
+                                out int code
+                            )
+                        )
                         {
                             builder.Append((char)code);
                             _position += 4;
@@ -370,20 +373,36 @@ internal static class NuxtExpressionParser
                 _position++;
             }
 
-            while (_position < _text.Length
-                && (char.IsDigit(_text[_position])
-                    || _text[_position] is '.' or 'e' or 'E' or '+' or '-'))
+            while (
+                _position < _text.Length
+                && (
+                    char.IsDigit(_text[_position])
+                    || _text[_position] is '.' or 'e' or 'E' or '+' or '-'
+                )
+            )
             {
                 _position++;
             }
 
             string raw = _text[start.._position];
-            if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long integer))
+            if (
+                long.TryParse(
+                    raw,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out long integer
+                )
+            )
             {
                 return integer;
             }
 
-            return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+            return double.TryParse(
+                raw,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out double number
+            )
                 ? number
                 : null;
         }
@@ -391,9 +410,10 @@ internal static class NuxtExpressionParser
         private string ParseIdentifierName()
         {
             int start = _position;
-            while (_position < _text.Length
-                && (char.IsLetterOrDigit(_text[_position])
-                    || _text[_position] is '_' or '$'))
+            while (
+                _position < _text.Length
+                && (char.IsLetterOrDigit(_text[_position]) || _text[_position] is '_' or '$')
+            )
             {
                 _position++;
             }

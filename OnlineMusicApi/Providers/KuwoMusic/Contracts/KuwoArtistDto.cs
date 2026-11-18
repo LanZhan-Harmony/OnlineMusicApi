@@ -1,24 +1,33 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace OnlineMusicApi.Internal.Contracts.KuwoMusic;
 
 internal sealed class KuwoArtistDto
 {
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
-
-    [JsonPropertyName("avatar")]
-    public string? Avatar { get; set; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
-
-    [JsonPropertyName("artistId")]
+    [JsonPropertyName("ARTISTID")]
     public string? ArtistId { get; set; }
 
-    [JsonPropertyName("description")]
+    [JsonPropertyName("ARTIST")]
+    public string? Artist { get; set; }
+
+    [JsonPropertyName("PICPATH")]
+    public string? PicPath { get; set; }
+
+    [JsonPropertyName("hts_PICPATH")]
+    public string? HtsPicPath { get; set; }
+
+    [JsonPropertyName("desc")]
     public string? Description { get; set; }
 
-    [JsonPropertyName("worksNum")]
-    public string? WorksNum { get; set; }
+    [JsonPropertyName("SONGNUM")]
+    public string? SongNum { get; set; }
+
+    [JsonPropertyName("ALBUMNUM")]
+    public string? AlbumNum { get; set; }
+
+    [JsonPropertyName("MVNUM")]
+    public string? MvNum { get; set; }
+
+    [JsonPropertyName("COUNTRY")]
+    public string? Country { get; set; }
 }

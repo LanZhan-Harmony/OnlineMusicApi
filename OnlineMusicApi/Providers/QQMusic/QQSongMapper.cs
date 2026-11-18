@@ -17,26 +17,27 @@ internal static class QQSongMapper
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        string id = ValueNormalizer.First(dto.SongMid, dto.Id);
+        string id = ValueNormalizer.First(dto.Mid, dto.SongMid);
         if (id.Length == 0)
         {
             return null;
         }
 
-        string albumId = ValueNormalizer.First(dto.AlbumMid, dto.AlbumId);
-        AlbumRef? album =
-            albumId.Length == 0 && string.IsNullOrWhiteSpace(dto.Album)
-                ? null
-                : new AlbumRef { Id = AlbumIdOf(albumId), Title = dto.Album ?? string.Empty };
+        string albumMid = ValueNormalizer.First(dto.Album?.Mid, dto.AlbumMid);
+        string albumTitle = ValueNormalizer.First(dto.Album?.Name, dto.Album?.Title, dto.AlbumName);
 
         return new Song
         {
             Id = SongIdOf(id),
-            Title = dto.Title ?? string.Empty,
-            Artists = ToArtists(dto),
-            Album = album,
-            Duration = dto.Duration > 0 ? TimeSpan.FromMilliseconds(dto.Duration) : null,
-            CoverUrl = dto.Artwork ?? string.Empty,
+            Title = ValueNormalizer.First(dto.Name, dto.SongName, dto.Title),
+            Artists = ToArtists(dto.Singers),
+            Album =
+                albumMid.Length == 0 && albumTitle.Length == 0
+                    ? null
+                    : new AlbumRef { Id = AlbumIdOf(albumMid), Title = albumTitle },
+            Duration = dto.Interval > 0 ? TimeSpan.FromSeconds(dto.Interval) : null,
+            CoverUrl = BuildCoverUrl(albumMid),
+            Year = ParseYear(ValueNormalizer.FirstOrNull(dto.TimePublic, dto.Album?.TimePublic)),
         };
     }
 
@@ -44,27 +45,36 @@ internal static class QQSongMapper
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        string id = ValueNormalizer.First(dto.AlbumMid, dto.Id);
-        string artistId = ValueNormalizer.First(dto.SingerMid, dto.SingerId);
+        string albumMid = ValueNormalizer.First(dto.AlbumMid, dto.AlbumMidUpper, dto.AlbumMidLower);
+        string albumId =
+            albumMid.Length > 0
+                ? albumMid
+                : ValueNormalizer.First(
+                    dto.AlbumId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    dto.AlbumIdUpper.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    dto.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                );
+
+        string singerName = ValueNormalizer.First(dto.SingerName, dto.SingerNameUpper);
+        string singerMid = ValueNormalizer.First(dto.SingerMid, dto.SingerMidUpper);
+        string cover = ValueNormalizer.First(dto.AlbumPic, dto.AlbumPicLower, dto.Pic);
+        if (cover.Length == 0)
+        {
+            cover = BuildCoverUrl(albumMid);
+        }
 
         return new Album
         {
-            Id = AlbumIdOf(id),
-            Title = dto.Title ?? string.Empty,
+            Id = AlbumIdOf(albumId),
+            Title = ValueNormalizer.First(dto.AlbumName, dto.AlbumNameUpper, dto.Name, dto.Title),
             Artists =
-                string.IsNullOrWhiteSpace(dto.Artist) && artistId.Length == 0
+                singerName.Length == 0
                     ? []
-                    :
-                    [
-                        new ArtistRef
-                        {
-                            Id = ArtistIdOf(artistId),
-                            Name = dto.Artist ?? string.Empty,
-                        },
-                    ],
-            Year = ParseYear(dto.Date),
-            Description = dto.Description ?? string.Empty,
-            CoverUrl = dto.Artwork ?? string.Empty,
+                    : [new ArtistRef { Id = ArtistIdOf(singerMid), Name = singerName }],
+            Year = ParseYear(ValueNormalizer.First(dto.PubTime, dto.PublicTime, dto.TimePublic)),
+            SongCount = dto.SongCount,
+            Description = ValueNormalizer.First(dto.Desc, dto.Description),
+            CoverUrl = cover,
         };
     }
 
@@ -74,10 +84,16 @@ internal static class QQSongMapper
 
         return new Artist
         {
-            Id = ArtistIdOf(ValueNormalizer.First(dto.SingerMid, dto.Id)),
-            Name = dto.Name ?? string.Empty,
-            SongCount = ValueNormalizer.ToInt(dto.WorksNum),
-            AvatarUrl = dto.Avatar ?? string.Empty,
+            Id = ArtistIdOf(
+                ValueNormalizer.First(
+                    dto.SingerMid,
+                    dto.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                )
+            ),
+            Name = ValueNormalizer.First(dto.Name, dto.SingerName),
+            AlbumCount = dto.AlbumSize,
+            SongCount = dto.MusicSize ?? dto.WorksNum,
+            AvatarUrl = NormalizeImageUrl(ValueNormalizer.First(dto.Avatar, dto.SingerPic)),
         };
     }
 
@@ -85,13 +101,17 @@ internal static class QQSongMapper
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        long playlistId = dto.DissId > 0 ? dto.DissId : dto.Id;
+
         return new Playlist
         {
-            Id = PlaylistIdOf(dto.Id ?? string.Empty),
-            Title = dto.Title ?? string.Empty,
-            SongCount = ValueNormalizer.ToInt(dto.WorksNums),
-            Description = dto.Description ?? string.Empty,
-            CoverUrl = dto.Artwork ?? string.Empty,
+            Id = PlaylistIdOf(
+                playlistId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            ),
+            Title = ValueNormalizer.First(dto.DissName, dto.Title),
+            SongCount = dto.SongCount ?? dto.WorksNums,
+            Description = ValueNormalizer.First(dto.ProgramDesc, dto.Description),
+            CoverUrl = ValueNormalizer.First(dto.ImgUrl, dto.Artwork),
         };
     }
 
@@ -173,13 +193,20 @@ internal static class QQSongMapper
         return new Album
         {
             Id = id,
-            Title = detail?.Title ?? detail?.AlbumName ?? string.Empty,
+            Title = ValueNormalizer.First(detail?.Title, detail?.AlbumName),
             Artists = artists,
             Year = ParseYear(detail?.CTime),
             SongCount = dto?.SongList?.Count,
             Description = detail?.Desc ?? string.Empty,
             CoverUrl = NormalizeImageUrl(detail?.PicUrl),
         };
+    }
+
+    private static string BuildCoverUrl(string albumMid)
+    {
+        return albumMid.Length == 0
+            ? string.Empty
+            : $"https://y.gtimg.cn/music/photo_new/T002R300x300M000{albumMid}.jpg";
     }
 
     private static string NormalizeImageUrl(string? url)
@@ -192,43 +219,31 @@ internal static class QQSongMapper
         return url.StartsWith("//", StringComparison.Ordinal) ? "https:" + url : url;
     }
 
-    private static IReadOnlyList<ArtistRef> ToArtists(QQSongDto dto)
+    private static IReadOnlyList<ArtistRef> ToArtists(List<QQSingerDto>? singers)
     {
-        if (dto.Singers is { Count: > 0 })
-        {
-            List<ArtistRef> artists = [with(dto.Singers.Count)];
-            foreach (QQSingerDto singer in dto.Singers)
-            {
-                artists.Add(
-                    new ArtistRef
-                    {
-                        Id = ArtistIdOf(ValueNormalizer.First(singer.Mid, singer.Id)),
-                        Name = singer.Name ?? string.Empty,
-                    }
-                );
-            }
-
-            return artists;
-        }
-
-        if (string.IsNullOrWhiteSpace(dto.Artist))
+        if (singers is not { Count: > 0 })
         {
             return [];
         }
 
-        return
-        [
-            .. dto
-                .Artist.Split(
-                    ',',
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-                )
-                .Select(static name => new ArtistRef
+        List<ArtistRef> artists = new(singers.Count);
+        foreach (QQSingerDto singer in singers)
+        {
+            artists.Add(
+                new ArtistRef
                 {
-                    Id = ArtistIdOf(string.Empty),
-                    Name = name,
-                }),
-        ];
+                    Id = ArtistIdOf(
+                        ValueNormalizer.First(
+                            singer.Mid,
+                            singer.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        )
+                    ),
+                    Name = singer.Name ?? string.Empty,
+                }
+            );
+        }
+
+        return artists;
     }
 
     private static int? ParseYear(string? value)

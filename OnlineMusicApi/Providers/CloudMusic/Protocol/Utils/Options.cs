@@ -1,4 +1,3 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Net;
 
 namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;

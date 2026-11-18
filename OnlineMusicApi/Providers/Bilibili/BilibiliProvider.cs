@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using OnlineMusicApi.Internal.Contracts.Bilibili;
 using OnlineMusicApi.Internal.Infrastructure.Caching;
 using OnlineMusicApi.Internal.Providers.Abstractions;
@@ -87,10 +85,7 @@ internal sealed class BilibiliProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchAlbumAsync(keyword, page).ConfigureAwait(false);
-        BilibiliMediaPageDto dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliMediaPageDto
-        ) ?? new BilibiliMediaPageDto();
+        BilibiliMediaPageDto dto = await _api.SearchAlbumAsync(keyword, page).ConfigureAwait(false);
 
         List<BilibiliMediaDto> medias = dto.Data ?? [];
         List<Album> items =
@@ -123,10 +118,8 @@ internal sealed class BilibiliProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchArtistAsync(keyword, page).ConfigureAwait(false);
-        BilibiliArtistPageDto dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliArtistPageDto
-        ) ?? new BilibiliArtistPageDto();
+        BilibiliArtistPageDto dto = await _api.SearchArtistAsync(keyword, page)
+            .ConfigureAwait(false);
 
         List<BilibiliArtistDto> artists = dto.Data ?? [];
         List<Artist> items =
@@ -166,13 +159,10 @@ internal sealed class BilibiliProvider
     {
         EnsureSource(id.Source);
 
-        (JsonObject json, List<BilibiliMediaDto> medias) = await FetchAlbumSongsRawAsync(
-                id,
-                cancellationToken
-            )
+        BilibiliAlbumSongsDto songsDto = await _api.GetAlbumSongsAsync(id.Value)
             .ConfigureAwait(false);
+        List<BilibiliMediaDto> medias = songsDto.MusicList ?? [];
 
-        _ = json;
         if (medias.Count == 0)
         {
             throw new OnlineMusicApiResponseException(
@@ -182,17 +172,16 @@ internal sealed class BilibiliProvider
             );
         }
 
-        BilibiliMediaDto first = medias[0];
-        Song? firstSong = BilibiliSongMapper.FromMedia(first);
+        Song? firstSong = BilibiliSongMapper.FromMedia(medias[0]);
 
         return new Album
         {
             Id = id,
-            Title = first.Title ?? string.Empty,
+            Title = firstSong?.Title ?? string.Empty,
             Artists = firstSong?.Artists ?? [],
             Year = firstSong?.Year,
             SongCount = medias.Count,
-            CoverUrl = first.Artwork ?? string.Empty,
+            CoverUrl = firstSong?.CoverUrl ?? string.Empty,
         };
     }
 
@@ -231,10 +220,7 @@ internal sealed class BilibiliProvider
     {
         EnsureSource(id.Source);
 
-        JsonObject json = await _api.GetUserCardAsync(id.Value).ConfigureAwait(false);
-        BilibiliUserCardDto? dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliUserCardDto
-        );
+        BilibiliUserCardDto dto = await _api.GetUserCardAsync(id.Value).ConfigureAwait(false);
 
         if (dto?.Data?.Card is null)
         {
@@ -261,12 +247,8 @@ internal sealed class BilibiliProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
         (int page, int skip) = ToPage(offset);
 
-        JsonObject artistItem = new() { ["id"] = id.Value };
-        JsonObject json = await _api.GetArtistWorksAsync(artistItem, page, "album")
+        BilibiliMediaPageDto dto = await _api.GetArtistWorksAsync(id.Value, page)
             .ConfigureAwait(false);
-        BilibiliMediaPageDto dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliMediaPageDto
-        ) ?? new BilibiliMediaPageDto();
 
         List<BilibiliMediaDto> medias = dto.Data ?? [];
         List<Album> items =
@@ -297,10 +279,7 @@ internal sealed class BilibiliProvider
         cancellationToken.ThrowIfCancellationRequested();
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
-        BilibiliMediaPageDto dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliMediaPageDto
-        ) ?? new BilibiliMediaPageDto();
+        BilibiliMediaPageDto dto = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
 
         List<BilibiliMediaDto> medias = dto.Data ?? [];
         List<RawSong> items = [];
@@ -325,22 +304,14 @@ internal sealed class BilibiliProvider
     private async Task<MediaSource?> FetchMediaAsync(SongId id, CancellationToken cancellationToken)
     {
         (string key, string? cid) = BilibiliSongMapper.ParseSongId(id.Value);
-        JsonObject item = ToMediaItem(key, cid);
 
-        JsonObject? json = await _api.GetMediaSourceAsync(
-                item,
+        BilibiliMediaSourceDto? dto = await _api.GetMediaSourceAsync(
+                key,
+                cid,
                 ToQualityString(AudioQuality.Highest)
             )
             .ConfigureAwait(false);
 
-        if (json is null)
-        {
-            return null;
-        }
-
-        BilibiliMediaSourceDto? dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliMediaSourceDto
-        );
         return BilibiliSongMapper.FromMediaSource(dto, AudioQuality.Highest);
     }
 
@@ -405,26 +376,10 @@ internal sealed class BilibiliProvider
             return cached;
         }
 
-        (_, List<BilibiliMediaDto> medias) = await FetchAlbumSongsRawAsync(id, cancellationToken)
-            .ConfigureAwait(false);
-
-        RawSong[] snapshot = ToSnapshot(medias);
+        BilibiliAlbumSongsDto dto = await _api.GetAlbumSongsAsync(id.Value).ConfigureAwait(false);
+        RawSong[] snapshot = ToSnapshot(dto.MusicList ?? []);
         _snapshots.Set(key, snapshot);
         return snapshot;
-    }
-
-    private async Task<(JsonObject Json, List<BilibiliMediaDto> Medias)> FetchAlbumSongsRawAsync(
-        AlbumId id,
-        CancellationToken cancellationToken
-    )
-    {
-        JsonObject albumItem = ToMediaItem(id.Value, null);
-        JsonObject json = await _api.GetAlbumInfoAsync(albumItem).ConfigureAwait(false);
-        BilibiliAlbumSongsDto? dto = json.Deserialize(
-            BilibiliJsonContext.Default.BilibiliAlbumSongsDto
-        );
-
-        return (json, dto?.MusicList ?? []);
     }
 
     private static RawSong[] ToSnapshot(List<BilibiliMediaDto> medias)
@@ -440,19 +395,6 @@ internal sealed class BilibiliProvider
         }
 
         return [.. snapshot];
-    }
-
-    private static JsonObject ToMediaItem(string key, string? cid)
-    {
-        JsonObject item = [];
-        item[BilibiliSongMapper.IsAid(key) ? "aid" : "bvid"] = key;
-
-        if (!string.IsNullOrWhiteSpace(cid))
-        {
-            item["cid"] = cid;
-        }
-
-        return item;
     }
 
     private static RawBatch Slice(IReadOnlyList<RawSong> snapshot, int offset, int limit)

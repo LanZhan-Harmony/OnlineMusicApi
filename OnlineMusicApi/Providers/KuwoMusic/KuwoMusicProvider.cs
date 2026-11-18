@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using OnlineMusicApi.Internal.Contracts.KuwoMusic;
 using OnlineMusicApi.Internal.Infrastructure.Caching;
 using OnlineMusicApi.Internal.Providers.Abstractions;
@@ -93,9 +91,7 @@ internal sealed class KuwoMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchAlbumAsync(keyword, page).ConfigureAwait(false);
-        KuwoAlbumPageDto dto = json.Deserialize(KuwoJsonContext.Default.KuwoAlbumPageDto)
-            ?? new KuwoAlbumPageDto();
+        KuwoAlbumPageDto dto = await _api.SearchAlbumsAsync(keyword, page).ConfigureAwait(false);
 
         List<KuwoAlbumDto> albums = dto.Data ?? [];
         List<Album> items = [.. albums.Skip(skip).Take(limit).Select(KuwoSongMapper.FromAlbum)];
@@ -125,9 +121,7 @@ internal sealed class KuwoMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchArtistAsync(keyword, page).ConfigureAwait(false);
-        KuwoArtistPageDto dto = json.Deserialize(KuwoJsonContext.Default.KuwoArtistPageDto)
-            ?? new KuwoArtistPageDto();
+        KuwoArtistPageDto dto = await _api.SearchArtistsAsync(keyword, page).ConfigureAwait(false);
 
         List<KuwoArtistDto> artists = dto.Data ?? [];
         List<Artist> items = [.. artists.Skip(skip).Take(limit).Select(KuwoSongMapper.FromArtist)];
@@ -157,9 +151,8 @@ internal sealed class KuwoMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchMusicSheetAsync(keyword, page).ConfigureAwait(false);
-        KuwoPlaylistPageDto dto = json.Deserialize(KuwoJsonContext.Default.KuwoPlaylistPageDto)
-            ?? new KuwoPlaylistPageDto();
+        KuwoPlaylistPageDto dto = await _api.SearchPlaylistsAsync(keyword, page)
+            .ConfigureAwait(false);
 
         List<KuwoPlaylistDto> playlists = dto.Data ?? [];
         List<Playlist> items =
@@ -199,9 +192,7 @@ internal sealed class KuwoMusicProvider
     {
         EnsureSource(id.Source);
 
-        JsonObject item = new() { ["id"] = id.Value };
-        JsonObject json = await _api.GetLyricAsync(item).ConfigureAwait(false);
-        KuwoLyricDto? dto = json.Deserialize(KuwoJsonContext.Default.KuwoLyricDto);
+        KuwoLyricDto dto = await _api.GetLyricAsync(id.Value).ConfigureAwait(false);
 
         return KuwoSongMapper.FromLyric(id, dto);
     }
@@ -217,8 +208,8 @@ internal sealed class KuwoMusicProvider
             return album;
         }
 
-        List<KuwoSongDto> songs = await FetchAlbumSongsRawAsync(id, cancellationToken)
-            .ConfigureAwait(false);
+        KuwoAlbumSongsDto songsDto = await _api.GetAlbumInfoAsync(id.Value).ConfigureAwait(false);
+        List<KuwoSongDto> songs = songsDto.MusicList ?? [];
         if (songs.Count == 0)
         {
             throw new OnlineMusicApiResponseException(
@@ -228,14 +219,14 @@ internal sealed class KuwoMusicProvider
             );
         }
 
-        KuwoSongDto first = songs[0];
+        Song? firstSong = KuwoSongMapper.FromSong(songs[0]);
         return new Album
         {
             Id = id,
-            Title = first.Album ?? string.Empty,
+            Title = firstSong?.Album?.Title ?? string.Empty,
             SongCount = songs.Count,
-            CoverUrl = first.Artwork ?? string.Empty,
-            Artists = KuwoSongMapper.FromSong(first)?.Artists ?? [],
+            CoverUrl = firstSong?.CoverUrl ?? string.Empty,
+            Artists = firstSong?.Artists ?? [],
         };
     }
 
@@ -291,11 +282,8 @@ internal sealed class KuwoMusicProvider
         int offset = ValueNormalizer.NormalizeOffset(query.Offset);
         (int page, int skip) = ToPage(offset);
 
-        JsonObject artistItem = new() { ["id"] = id.Value };
-        JsonObject json = await _api.GetArtistWorksAsync(artistItem, page, "album")
+        KuwoAlbumPageDto dto = await _api.GetArtistAlbumsAsync(id.Value, page)
             .ConfigureAwait(false);
-        KuwoAlbumPageDto dto = json.Deserialize(KuwoJsonContext.Default.KuwoAlbumPageDto)
-            ?? new KuwoAlbumPageDto();
 
         List<KuwoAlbumDto> albums = dto.Data ?? [];
         List<Album> items = [.. albums.Skip(skip).Take(limit).Select(KuwoSongMapper.FromAlbum)];
@@ -354,9 +342,7 @@ internal sealed class KuwoMusicProvider
         cancellationToken.ThrowIfCancellationRequested();
 
         (int page, int skip) = ToPage(offset);
-        JsonObject json = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
-        KuwoSongPageDto dto = json.Deserialize(KuwoJsonContext.Default.KuwoSongPageDto)
-            ?? new KuwoSongPageDto();
+        KuwoSongPageDto dto = await _api.SearchMusicAsync(keyword, page).ConfigureAwait(false);
 
         List<KuwoSongDto> songs = dto.Data ?? [];
         List<RawSong> items = [];
@@ -380,16 +366,12 @@ internal sealed class KuwoMusicProvider
 
     private async Task<MediaSource?> FetchMediaAsync(SongId id, CancellationToken cancellationToken)
     {
-        JsonObject item = new() { ["id"] = id.Value };
-        JsonObject? json = await _api.GetMediaSourceAsync(item, AudioQuality.Highest.ToString())
+        KuwoMediaDto? dto = await _api.GetMediaSourceAsync(
+                id.Value,
+                AudioQuality.Highest.ToString()
+            )
             .ConfigureAwait(false);
 
-        if (json is null)
-        {
-            return null;
-        }
-
-        KuwoMediaDto? dto = json.Deserialize(KuwoJsonContext.Default.KuwoMediaDto);
         return KuwoSongMapper.FromMedia(dto);
     }
 
@@ -454,23 +436,10 @@ internal sealed class KuwoMusicProvider
             return cached;
         }
 
-        List<KuwoSongDto> songs = await FetchAlbumSongsRawAsync(id, cancellationToken)
-            .ConfigureAwait(false);
-        RawSong[] snapshot = ToSnapshot(songs);
+        KuwoAlbumSongsDto dto = await _api.GetAlbumInfoAsync(id.Value).ConfigureAwait(false);
+        RawSong[] snapshot = ToSnapshot(dto.MusicList ?? []);
         _snapshots.Set(key, snapshot);
         return snapshot;
-    }
-
-    private async Task<List<KuwoSongDto>> FetchAlbumSongsRawAsync(
-        AlbumId id,
-        CancellationToken cancellationToken
-    )
-    {
-        JsonObject albumItem = new() { ["id"] = id.Value };
-        JsonObject json = await _api.GetAlbumInfoAsync(albumItem).ConfigureAwait(false);
-        KuwoAlbumSongsDto? dto = json.Deserialize(KuwoJsonContext.Default.KuwoAlbumSongsDto);
-
-        return dto?.MusicList ?? [];
     }
 
     private async Task<IReadOnlyList<RawSong>> GetPlaylistSnapshotAsync(
@@ -487,11 +456,10 @@ internal sealed class KuwoMusicProvider
             return cached;
         }
 
-        JsonArray array = await _api.GetMusicSheetSongsAsync(id.Value).ConfigureAwait(false);
-        JsonObject wrapper = new() { ["musicList"] = array };
-        KuwoAlbumSongsDto? dto = wrapper.Deserialize(KuwoJsonContext.Default.KuwoAlbumSongsDto);
+        List<KuwoSongDto> songs = await _api.GetMusicSheetSongsAsync(id.Value)
+            .ConfigureAwait(false);
 
-        RawSong[] snapshot = ToSnapshot(dto?.MusicList ?? []);
+        RawSong[] snapshot = ToSnapshot(songs);
         _snapshots.Set(key, snapshot);
         return snapshot;
     }

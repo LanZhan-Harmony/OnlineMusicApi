@@ -1,21 +1,17 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using OnlineMusicApi.Internal.Contracts.FiveSing;
+using OnlineMusicApi.Internal.Infrastructure.Http;
+
 namespace OnlineMusicApi.Internal.Providers.FiveSing.Protocol;
 
-/// <summary>
-/// 5sing 音乐 API
-/// </summary>
-internal sealed partial class FiveSingMusicApiService : IDisposable
+internal sealed class FiveSingMusicApiService : IDisposable
 {
     private const int PageSize = 10;
-
-    [GeneratedRegex("<[^>]+>", RegexOptions.Compiled)]
-    private static partial Regex HtmlTagRegex();
 
     private readonly HttpClient _client;
     private readonly bool _ownsClient;
@@ -37,103 +33,192 @@ internal sealed partial class FiveSingMusicApiService : IDisposable
         _ownsClient = false;
     }
 
-    public Task<JsonObject> SearchMusicAsync(string query, int page) =>
-        SearchAsync(query, page, 0, 0);
-
-    public Task<JsonObject> SearchAlbumAsync(string query, int page) =>
-        SearchAsync(query, page, 1, 0);
-
-    public Task<JsonObject> SearchArtistAsync(string query, int page) =>
-        SearchAsync(query, page, 2, 1);
-
-    public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
+    public Task<FiveSingSongPageDto> SearchMusicAsync(string query, int page)
     {
-        ArgumentNullException.ThrowIfNull(musicItem);
-
-        string id = GetString(musicItem, "id")
-            ?? throw new ArgumentException("musicItem.id 不能为空", nameof(musicItem));
-        string typeEname = GetString(musicItem, "typeEname")
-            ?? throw new ArgumentException("musicItem.typeEname 不能为空", nameof(musicItem));
-
-        JsonObject res = await GetJsonAsync(
-            "http://5sing.kugou.com/fm/m/json/lrc",
-            new QueryCollection { { "songId", id }, { "songType", typeEname } },
-            null
-        );
-
-        return new JsonObject { ["rawLrc"] = GetString(res, "txt") ?? string.Empty };
+        return SearchSongsAsync(query, page);
     }
 
-    public async Task<JsonObject> GetAlbumInfoAsync(JsonObject albumItem)
+    public Task<FiveSingAlbumPageDto> SearchAlbumAsync(string query, int page)
     {
-        ArgumentNullException.ThrowIfNull(albumItem);
-
-        string id = GetString(albumItem, "id")
-            ?? throw new ArgumentException("albumItem.id 不能为空", nameof(albumItem));
-
-        JsonObject res = await GetJsonAsync(
-            "http://service.5sing.kugou.com/song/getPlayListSong",
-            new QueryCollection { { "id", id } },
-            BuildMobileHeaders()
-        );
-
-        JsonArray musicList = [];
-        foreach (JsonNode? item in res["data"]?.AsArray() ?? [])
-        {
-            if (item is not JsonObject song)
-            {
-                continue;
-            }
-
-            musicList.Add(
-                new JsonObject
-                {
-                    ["id"] = GetString(song, "ID"),
-                    ["typeEname"] = GetString(song, "SK"),
-                    ["title"] = GetString(song, "SN"),
-                    ["artist"] = GetString(song["user"] as JsonObject, "NN"),
-                    ["singerId"] = GetString(song["user"] as JsonObject, "ID"),
-                    ["album"] = GetString(albumItem, "title"),
-                    ["artwork"] = GetString(albumItem, "artwork"),
-                }
-            );
-        }
-
-        return new JsonObject { ["musicList"] = musicList };
+        return SearchAlbumsAsync(query, page);
     }
 
-    public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string quality)
+    public Task<FiveSingArtistPageDto> SearchArtistAsync(string query, int page)
     {
-        ArgumentNullException.ThrowIfNull(musicItem);
+        return SearchArtistsAsync(query, page);
+    }
 
-        string? songId = GetString(musicItem, "id");
-        string? songType = GetString(musicItem, "typeEname");
-        if (string.IsNullOrWhiteSpace(songId) || string.IsNullOrWhiteSpace(songType))
-        {
-            return null;
-        }
+    public async Task<FiveSingLyricDto> GetLyricAsync(string songId, string typeEname)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(songId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(typeEname);
 
-        JsonObject? root = await GetSongUrlAsync(songId, songType);
-        if (root?["data"] is not JsonObject data)
+        QueryCollection query = new() { { "songId", songId }, { "songType", typeEname } };
+        FiveSingLyricResponseDto? response = await GetJsonAsync(
+                "http://5sing.kugou.com/fm/m/json/lrc",
+                query,
+                null,
+                FiveSingJsonContext.Default.FiveSingLyricResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return new FiveSingLyricDto { RawLrc = response?.Text ?? string.Empty };
+    }
+
+    public async Task<FiveSingAlbumSongsDto> GetAlbumInfoAsync(string albumId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(albumId);
+
+        QueryCollection query = new() { { "id", albumId } };
+        FiveSingAlbumSongsResponseDto? response = await GetJsonAsync(
+                "http://service.5sing.kugou.com/song/getPlayListSong",
+                query,
+                BuildMobileHeaders(),
+                FiveSingJsonContext.Default.FiveSingAlbumSongsResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return new FiveSingAlbumSongsDto { MusicList = response?.Data ?? [] };
+    }
+
+    public async Task<FiveSingMediaDto?> GetMediaSourceAsync(
+        string songId,
+        string typeEname,
+        string quality
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(songId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(typeEname);
+
+        FiveSingSongUrlResponseDto? response = await GetSongUrlAsync(songId, typeEname)
+            .ConfigureAwait(false);
+        FiveSingSongUrlDataDto? data = response?.Data;
+        if (data is null)
         {
             return null;
         }
 
         string? url = quality switch
         {
-            "low" => GetString(data, "lqurl") ?? GetString(data, "lqurl_backup"),
-            "standard" => GetString(data, "squrl") ?? GetString(data, "squrl_backup"),
-            "high" or "super" => GetString(data, "hqurl") ?? GetString(data, "hqurl_backup"),
-            _ => GetString(data, "hqurl") ?? GetString(data, "hqurl_backup"),
+            "low" => First(data.LqUrl, data.LqUrlBackup),
+            "standard" => First(data.SqUrl, data.SqUrlBackup),
+            "high" or "super" => First(data.HqUrl, data.HqUrlBackup),
+            _ => First(data.HqUrl, data.HqUrlBackup),
         };
 
-        url ??= GetString(data, "squrl") ?? GetString(data, "squrl_backup");
-        url ??= GetString(data, "lqurl") ?? GetString(data, "lqurl_backup");
+        url ??= First(data.SqUrl, data.SqUrlBackup);
+        url ??= First(data.LqUrl, data.LqUrlBackup);
 
-        return string.IsNullOrWhiteSpace(url) ? null : new JsonObject { ["url"] = url };
+        return string.IsNullOrWhiteSpace(url) ? null : new FiveSingMediaDto { Url = url };
     }
 
-    private async Task<JsonObject?> GetSongUrlAsync(string songId, string songType)
+    public async Task<string> GetArtistPageHtmlAsync(string artistId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(artistId);
+
+        return await GetStringAsync(
+                $"https://5sing.kugou.com/{Uri.EscapeDataString(artistId)}/default.html",
+                null,
+                null
+            )
+            .ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        if (_ownsClient)
+        {
+            _client.Dispose();
+        }
+    }
+
+    private async Task<FiveSingSongPageDto> SearchSongsAsync(string query, int page)
+    {
+        FiveSingSearchSongResponseDto? response = await SearchAsync(
+                query,
+                page,
+                0,
+                0,
+                FiveSingJsonContext.Default.FiveSingSearchSongResponseDto
+            )
+            .ConfigureAwait(false);
+        FiveSingPageInfoDto? info = response?.PageInfo;
+
+        return new FiveSingSongPageDto
+        {
+            IsEnd = (info?.Current ?? 0) >= (info?.TotalPages ?? 0),
+            Data = response?.List ?? [],
+        };
+    }
+
+    private async Task<FiveSingAlbumPageDto> SearchAlbumsAsync(string query, int page)
+    {
+        FiveSingSearchAlbumResponseDto? response = await SearchAsync(
+                query,
+                page,
+                1,
+                0,
+                FiveSingJsonContext.Default.FiveSingSearchAlbumResponseDto
+            )
+            .ConfigureAwait(false);
+        FiveSingPageInfoDto? info = response?.PageInfo;
+
+        return new FiveSingAlbumPageDto
+        {
+            IsEnd = (info?.Current ?? 0) >= (info?.TotalPages ?? 0),
+            Data = response?.List ?? [],
+        };
+    }
+
+    private async Task<FiveSingArtistPageDto> SearchArtistsAsync(string query, int page)
+    {
+        FiveSingSearchArtistResponseDto? response = await SearchAsync(
+                query,
+                page,
+                2,
+                1,
+                FiveSingJsonContext.Default.FiveSingSearchArtistResponseDto
+            )
+            .ConfigureAwait(false);
+        FiveSingPageInfoDto? info = response?.PageInfo;
+
+        return new FiveSingArtistPageDto
+        {
+            IsEnd = (info?.Current ?? 0) >= (info?.TotalPages ?? 0),
+            Data = response?.List ?? [],
+        };
+    }
+
+    private async Task<T?> SearchAsync<T>(
+        string query,
+        int page,
+        int type,
+        int filter,
+        JsonTypeInfo<T> typeInfo
+    )
+        where T : class
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+
+        QueryCollection queryParams = new()
+        {
+            { "keyword", query },
+            { "sort", "1" },
+            { "page", page.ToString(CultureInfo.InvariantCulture) },
+            { "filter", filter.ToString(CultureInfo.InvariantCulture) },
+            { "type", type.ToString(CultureInfo.InvariantCulture) },
+        };
+
+        return await GetJsonAsync(
+                "http://search.5sing.kugou.com/home/json",
+                queryParams,
+                BuildSearchHeaders(),
+                typeInfo
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<FiveSingSongUrlResponseDto?> GetSongUrlAsync(string songId, string songType)
     {
         string deviceId = Guid.NewGuid().ToString("N");
         SortedDictionary<string, string> parameters = new(StringComparer.Ordinal)
@@ -174,84 +259,24 @@ internal sealed partial class FiveSingMusicApiService : IDisposable
         query.Add("signature", signature);
 
         return await GetJsonAsync(
-            "https://5sservice.kugou.com/song/getsongurl",
-            query,
-            BuildSongUrlHeaders()
-        );
+                "https://5sservice.kugou.com/song/getsongurl",
+                query,
+                BuildSongUrlHeaders(),
+                FiveSingJsonContext.Default.FiveSingSongUrlResponseDto
+            )
+            .ConfigureAwait(false);
     }
 
-    private static QueryCollection BuildSongUrlHeaders() =>
-        new()
-        {
-            { "Accept", "application/json, text/javascript, */*; q=0.01" },
-            { "Accept-Encoding", "gzip, deflate" },
-            { "Accept-Language", "zh-CN,zh;q=0.9" },
-            { "Referer", "https://5sing.kugou.com/" },
-            {
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36"
-            },
-        };
-
-    public async Task<string> GetArtistPageHtmlAsync(string artistId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(artistId);
-
-        return await GetStringAsync(
-            $"https://5sing.kugou.com/{Uri.EscapeDataString(artistId)}/default.html",
-            null,
-            null
-        );
-    }
-
-    private async Task<JsonObject> SearchAsync(string query, int page, int type, int filter)
-    {
-        JsonObject res = await GetJsonAsync(
-            "http://search.5sing.kugou.com/home/json",
-            new QueryCollection
-            {
-                { "keyword", query },
-                { "sort", "1" },
-                { "page", page.ToString(CultureInfo.InvariantCulture) },
-                { "filter", filter.ToString(CultureInfo.InvariantCulture) },
-                { "type", type.ToString(CultureInfo.InvariantCulture) },
-            },
-            BuildSearchHeaders()
-        );
-
-        JsonArray data = [];
-        foreach (JsonNode? item in res["list"]?.AsArray() ?? [])
-        {
-            if (item is not JsonObject source)
-            {
-                continue;
-            }
-
-            data.Add(
-                type switch
-                {
-                    0 => FormatMusicItem(source),
-                    1 => FormatAlbumItem(source),
-                    2 => FormatArtistItem(source),
-                    _ => source.DeepClone(),
-                }
-            );
-        }
-
-        int cur = res["pageInfo"]?["cur"]?.GetValue<int>() ?? 0;
-        int totalPages = res["pageInfo"]?["totalPages"]?.GetValue<int>() ?? 0;
-
-        return new JsonObject { ["isEnd"] = cur >= totalPages, ["data"] = data };
-    }
-
-    private async Task<JsonObject> GetJsonAsync(
+    private async Task<T?> GetJsonAsync<T>(
         string url,
         IEnumerable<KeyValuePair<string, string>>? query,
-        IEnumerable<KeyValuePair<string, string>>? headers
+        IEnumerable<KeyValuePair<string, string>>? headers,
+        JsonTypeInfo<T> typeInfo
     )
+        where T : class
     {
-        string text = await GetStringAsync(url, query, headers);
-        return JsonNode.Parse(text)?.AsObject() ?? [];
+        string text = await GetStringAsync(url, query, headers).ConfigureAwait(false);
+        return JsonSerializer.Deserialize(text, typeInfo);
     }
 
     private async Task<string> GetStringAsync(
@@ -260,16 +285,18 @@ internal sealed partial class FiveSingMusicApiService : IDisposable
         IEnumerable<KeyValuePair<string, string>>? headers
     )
     {
-        using HttpResponseMessage response = await _client.SendAsync(
-            HttpMethod.Get,
-            url,
-            query,
-            headers,
-            content: (string?)null,
-            contentType: null
-        );
+        using HttpResponseMessage response = await _client
+            .SendAsync(
+                HttpMethod.Get,
+                url,
+                query,
+                headers,
+                content: (string?)null,
+                contentType: null
+            )
+            .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
     private static QueryCollection BuildSearchHeaders() =>
@@ -284,20 +311,6 @@ internal sealed partial class FiveSingMusicApiService : IDisposable
             { "Accept-Encoding", "gzip, deflate" },
             { "Accept-Language", "zh-CN,zh;q=0.9" },
             { "Referer", "http://search.5sing.kugou.com/home/index" },
-        };
-
-    private static QueryCollection BuildCommonHeaders() =>
-        new()
-        {
-            { "Accept", "*/*" },
-            { "Accept-Encoding", "gzip, deflate" },
-            { "Accept-Language", "zh-CN,zh;q=0.9" },
-            { "Host", "service.5sing.kugou.com" },
-            { "Referer", "http://5sing.kugou.com/" },
-            {
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36"
-            },
         };
 
     private static QueryCollection BuildMobileHeaders() =>
@@ -316,82 +329,21 @@ internal sealed partial class FiveSingMusicApiService : IDisposable
             },
         };
 
-    private static JsonObject FormatMusicItem(JsonObject source) =>
+    private static QueryCollection BuildSongUrlHeaders() =>
         new()
         {
-            ["id"] = GetString(source, "songId"),
-            ["title"] = HtmlToText(GetString(source, "songName")),
-            ["artist"] = GetString(source, "singer"),
-            ["singerId"] = GetString(source, "singerId"),
-            ["album"] = GetString(source, "typeName"),
-            ["type"] = GetString(source, "type"),
-            ["typeName"] = GetString(source, "typeName"),
-            ["typeEname"] = GetString(source, "typeEname"),
+            { "Accept", "application/json, text/javascript, */*; q=0.01" },
+            { "Accept-Encoding", "gzip, deflate" },
+            { "Accept-Language", "zh-CN,zh;q=0.9" },
+            { "Referer", "https://5sing.kugou.com/" },
+            {
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36"
+            },
         };
 
-    private static JsonObject FormatAlbumItem(JsonObject source) =>
-        new()
-        {
-            ["id"] = GetString(source, "songListId"),
-            ["artist"] = GetString(source, "userName"),
-            ["title"] = HtmlToText(GetString(source, "title")),
-            ["artwork"] = GetString(source, "pictureUrl"),
-            ["description"] = GetString(source, "content"),
-            ["date"] = GetString(source, "createTime"),
-        };
-
-    private static JsonObject FormatArtistItem(JsonObject source) =>
-        new()
-        {
-            ["id"] = GetString(source, "id"),
-            ["name"] = HtmlToText(GetString(source, "nickName")),
-            ["fans"] = GetString(source, "fans"),
-            ["avatar"] = GetString(source, "pictureUrl"),
-            ["description"] = GetString(source, "description"),
-            ["worksNum"] = GetString(source, "totalSong"),
-        };
-
-    private static string HtmlToText(string? html)
+    private static string? First(string? primary, string? backup)
     {
-        if (string.IsNullOrWhiteSpace(html))
-        {
-            return string.Empty;
-        }
-
-        return WebUtility.HtmlDecode(HtmlTagRegex().Replace(html, string.Empty));
-    }
-
-    private static string? GetString(JsonObject? source, string key)
-    {
-        if (
-            source is null
-            || !source.TryGetPropertyValue(key, out JsonNode? value)
-            || value is null
-        )
-        {
-            return null;
-        }
-
-        return value switch
-        {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
-                intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
-                longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
-                doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
-                boolValue.ToString(),
-            _ => value.ToJsonString(),
-        };
-    }
-
-    public void Dispose()
-    {
-        if (_ownsClient)
-        {
-            _client.Dispose();
-        }
+        return !string.IsNullOrWhiteSpace(primary) ? primary : backup;
     }
 }

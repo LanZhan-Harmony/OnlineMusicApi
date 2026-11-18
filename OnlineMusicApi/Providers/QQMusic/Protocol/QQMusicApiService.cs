@@ -1,35 +1,17 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Globalization;
 using System.Net;
 using System.Text;
-using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
+using OnlineMusicApi.Internal.Contracts.QQMusic;
+using OnlineMusicApi.Internal.Infrastructure.Http;
+
 namespace OnlineMusicApi.Internal.Providers.QQMusic.Protocol;
 
-/// <summary>
-/// QQ音乐 API
-/// </summary>
 internal sealed partial class QQMusicApiService : IDisposable
 {
     private const int PageSize = 20;
-
-    private static readonly Dictionary<int, string> SearchTypeMap = new()
-    {
-        [0] = "song",
-        [2] = "album",
-        [1] = "singer",
-        [3] = "songlist",
-    };
-
-    private static readonly Dictionary<string, (string Prefix, string Extension)> MediaTypeMap =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["m4a"] = ("C400", ".m4a"),
-            ["128"] = ("M500", ".mp3"),
-            ["320"] = ("M800", ".mp3"),
-            ["ape"] = ("A000", ".ape"),
-            ["flac"] = ("F000", ".flac"),
-        };
 
     [GeneratedRegex("callback\\(|MusicJsonCallback\\(|jsonCallback\\(|\\)$", RegexOptions.Compiled)]
     private static partial Regex JsonpWrapperRegex();
@@ -54,386 +36,350 @@ internal sealed partial class QQMusicApiService : IDisposable
         _ownsClient = false;
     }
 
-    public Task<JsonObject> SearchMusicAsync(string query, int page) => SearchAsync(query, page, 0);
-
-    public Task<JsonObject> SearchAlbumAsync(string query, int page) => SearchAsync(query, page, 2);
-
-    public Task<JsonObject> SearchArtistAsync(string query, int page) =>
-        SearchAsync(query, page, 1);
-
-    public Task<JsonObject> SearchMusicSheetAsync(string query, int page) =>
-        SearchAsync(query, page, 3);
-
-    public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string? quality = null)
+    public Task<QQSongPageDto> SearchSongsAsync(string query, int page)
     {
-        ArgumentNullException.ThrowIfNull(musicItem);
-
-        string? songMid = GetString(musicItem, "songmid");
-        if (string.IsNullOrEmpty(songMid))
-        {
-            return null;
-        }
-
-        string mediaType = quality switch
-        {
-            "low" => "m4a",
-            "high" => "320",
-            "super" => "flac",
-            _ => "128",
-        };
-
-        // 与 qq.ts 保持一致：先走不带 filename 的 CgiGetVkey，请求可播放链接。
-        JsonObject? vKey = await GetPlayableSourceUrlAsync(songMid);
-        string? sip = vKey?["req_0"]?["data"]?["sip"]?.AsArray().FirstOrDefault()?.ToString();
-        string? purl = vKey
-            ?["req_0"]?["data"]?["midurlinfo"]?.AsArray()
-            .FirstOrDefault()
-            ?["purl"]?.ToString();
-
-        // 若仍无 purl，再回退到按质量拼接 filename 的旧逻辑。
-        if (string.IsNullOrEmpty(purl))
-        {
-            JsonObject? qualityVKey = await GetSourceUrlAsync(songMid, mediaType);
-            sip = qualityVKey?["req_0"]?["data"]?["sip"]?.AsArray().FirstOrDefault()?.ToString();
-            purl = qualityVKey
-                ?["req_0"]?["data"]?["midurlinfo"]?.AsArray()
-                .FirstOrDefault()
-                ?["purl"]?.ToString();
-        }
-
-        if (string.IsNullOrEmpty(sip) || string.IsNullOrEmpty(purl))
-        {
-            return null;
-        }
-
-        return new JsonObject { ["url"] = $"{sip}{purl}" };
+        return SearchSongsCoreAsync(query, page);
     }
 
-    public async Task<JsonObject> GetAlbumInfoAsync(JsonObject albumItem)
+    public async Task<QQAlbumPageDto> SearchAlbumsAsync(string query, int page)
     {
-        ArgumentNullException.ThrowIfNull(albumItem);
+        QQMusicuSearchResponseDto response = await SearchMusicuAsync(query, page, 2)
+            .ConfigureAwait(false);
+        QQMusicuSearchDataDto? data = response.Req1;
 
-        string? albumMid = GetString(albumItem, "albumMID");
-        if (string.IsNullOrEmpty(albumMid))
+        return new QQAlbumPageDto
         {
-            throw new ArgumentException("albumMID 不能为空", nameof(albumItem));
-        }
+            IsEnd = (data?.Meta?.Sum ?? 0) <= page * PageSize,
+            Data = data?.Body?.Album?.List ?? [],
+        };
+    }
 
-        JsonObject payload = new()
+    public async Task<QQArtistPageDto> SearchArtistsAsync(string query, int page)
+    {
+        QQMusicuSearchResponseDto response = await SearchMusicuAsync(query, page, 1)
+            .ConfigureAwait(false);
+        QQMusicuSearchDataDto? data = response.Req1;
+
+        return new QQArtistPageDto
         {
-            ["comm"] = new JsonObject { ["ct"] = 24, ["cv"] = 10000 },
-            ["albumSonglist"] = new JsonObject
+            IsEnd = (data?.Meta?.Sum ?? 0) <= page * PageSize,
+            Data = data?.Body?.Singer?.List ?? [],
+        };
+    }
+
+    public async Task<QQPlaylistPageDto> SearchPlaylistsAsync(string query, int page)
+    {
+        QQMusicuSearchResponseDto response = await SearchMusicuAsync(query, page, 3)
+            .ConfigureAwait(false);
+        QQMusicuSearchDataDto? data = response.Req1;
+
+        return new QQPlaylistPageDto
+        {
+            IsEnd = (data?.Meta?.Sum ?? 0) <= page * PageSize,
+            Data = data?.Body?.Playlist?.List ?? [],
+        };
+    }
+
+    public async Task<QQMediaDto?> GetMediaSourceAsync(string songMid, string? quality = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(songMid);
+
+        QQVKeyResponseDto? response = await GetVKeyAsync(songMid).ConfigureAwait(false);
+        string? sip = response?.Req0?.Data?.Sip?.FirstOrDefault();
+        string? purl = response?.Req0?.Data?.MidUrlInfo?.FirstOrDefault()?.Purl;
+
+        return string.IsNullOrEmpty(purl) ? null : new QQMediaDto { Url = sip + purl };
+    }
+
+    public async Task<QQAlbumSongsDto> GetAlbumSongsAsync(string albumMid)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(albumMid);
+
+        QQAlbumSongListRequestDto request = new()
+        {
+            Comm = new QQCommRequestDto { Ct = 24, Cv = 10000 },
+            AlbumSonglist = new QQAlbumSongListRequestItemDto
             {
-                ["method"] = "GetAlbumSongList",
-                ["param"] = new JsonObject
+                Param = new QQAlbumSongListParamDto
                 {
-                    ["albumMid"] = albumMid,
-                    ["albumID"] = 0,
-                    ["begin"] = 0,
-                    ["num"] = 999,
-                    ["order"] = 2,
+                    AlbumMid = albumMid,
+                    Num = 999,
+                    Order = 2,
                 },
-                ["module"] = "music.musichallAlbum.AlbumSongList",
             },
         };
 
+        string json = JsonSerializer.Serialize(
+            request,
+            QQJsonContext.Default.QQAlbumSongListRequestDto
+        );
+
         string url = ChangeUrlQuery(
-            new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
+            new Dictionary<string, string> { ["data"] = json },
             "https://u.y.qq.com/cgi-bin/musicu.fcg?g_tk=5381&format=json&inCharset=utf8&outCharset=utf-8"
         );
-        JsonObject res = await GetJsonAsync(url);
 
-        JsonArray musicList = [];
-        foreach (JsonNode? item in res["albumSonglist"]?["data"]?["songList"]?.AsArray() ?? [])
-        {
-            if (item is JsonObject entry && entry["songInfo"] is JsonObject song)
-            {
-                musicList.Add(FormatMusicItem(song));
-            }
-        }
+        QQAlbumSongListResponseDto? response = await GetJsonAsync(
+                url,
+                QQJsonContext.Default.QQAlbumSongListResponseDto
+            )
+            .ConfigureAwait(false);
 
-        return new JsonObject { ["musicList"] = musicList };
+        List<QQSongDto> songs =
+        [
+            .. (response?.AlbumSonglist?.Data?.SongList ?? [])
+                .Where(static entry => entry.SongInfo is not null)
+                .Select(static entry => entry.SongInfo!),
+        ];
+
+        return new QQAlbumSongsDto { MusicList = songs };
     }
 
-    public Task<JsonObject> GetArtistWorksAsync(JsonObject artistItem, int page, string type) =>
-        type switch
-        {
-            "album" => GetArtistAlbumsAsync(artistItem, page),
-            _ => Task.FromResult(new JsonObject { ["isEnd"] = true, ["data"] = new JsonArray() }),
-        };
-
-    public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
+    public async Task<QQLyricDto> GetLyricAsync(string songMid)
     {
-        ArgumentNullException.ThrowIfNull(musicItem);
-
-        string? songMid = GetString(musicItem, "songmid");
-        if (string.IsNullOrEmpty(songMid))
-        {
-            throw new ArgumentException("songmid 不能为空", nameof(musicItem));
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(songMid);
 
         string url =
             $"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={Uri.EscapeDataString(songMid)}&pcachetime={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
-        JsonObject res = await GetJsonpAsync(url);
 
-        string? lyric = DecodeLyricBase64(GetString(res, "lyric"));
-        string? trans = DecodeLyricBase64(GetString(res, "trans"));
+        QQLyricResponseDto? response = await GetJsonpAsync(
+                url,
+                QQJsonContext.Default.QQLyricResponseDto
+            )
+            .ConfigureAwait(false);
 
-        JsonObject result = new() { ["rawLrc"] = lyric ?? string.Empty };
-        if (!string.IsNullOrEmpty(trans))
+        return new QQLyricDto
         {
-            result["translation"] = trans;
-        }
-
-        return result;
+            RawLrc = DecodeLyricBase64(response?.Lyric) ?? string.Empty,
+            Translation = DecodeLyricBase64(response?.Trans),
+        };
     }
 
-    public async Task<JsonArray> GetMusicSheetSongsAsync(string sheetId)
+    public async Task<List<QQSongDto>> GetMusicSheetSongsAsync(string sheetId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sheetId);
 
         string url =
             $"https://i.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&utf8=1&disstid={Uri.EscapeDataString(sheetId)}&loginUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
-        JsonObject res = await GetJsonpAsync(url, referer: "https://y.qq.com/n/yqq/playlist");
 
-        JsonArray list = [];
-        foreach (
-            JsonNode? item in res["cdlist"]?.AsArray().FirstOrDefault()?["songlist"]?.AsArray()
-                ?? []
-        )
-        {
-            if (item is JsonObject song)
-            {
-                list.Add(FormatMusicItem(song));
-            }
-        }
+        QQPlaylistResponseDto? response = await GetJsonpAsync(
+                url,
+                QQJsonContext.Default.QQPlaylistResponseDto,
+                referer: "https://y.qq.com/n/yqq/playlist"
+            )
+            .ConfigureAwait(false);
 
-        return list;
+        return response?.Cdlist?.FirstOrDefault()?.Songlist ?? [];
     }
 
-    private async Task<JsonObject> SearchAsync(string query, int page, int searchType)
+    public async Task<QQAlbumPageDto> GetArtistAlbumsAsync(string singerMid, int page)
     {
-        JsonObject baseResult = await SearchBaseAsync(query, page, searchType);
-        JsonArray data = baseResult["data"] as JsonArray ?? [];
-        JsonArray mapped = [];
+        ArgumentException.ThrowIfNullOrWhiteSpace(singerMid);
 
-        foreach (JsonNode? item in data)
+        QQSingerAlbumRequestDto request = new()
         {
-            if (item is not JsonObject source)
+            Comm = new QQCommRequestDto { Ct = 24, Cv = 0 },
+            SingerAlbum = new QQSingerAlbumRequestItemDto
             {
-                continue;
-            }
-
-            mapped.Add(
-                searchType switch
+                Param = new QQSingerAlbumParamDto
                 {
-                    0 => FormatMusicItem(source),
-                    2 => FormatAlbumItem(source),
-                    1 => FormatArtistItem(source),
-                    3 => FormatMusicSheetItem(source),
-                    _ => source.DeepClone(),
-                }
-            );
-        }
-
-        return new JsonObject
-        {
-            ["isEnd"] = baseResult["isEnd"]?.GetValue<bool>() ?? true,
-            ["data"] = mapped,
-        };
-    }
-
-    private async Task<JsonObject> SearchBaseAsync(string query, int page, int searchType)
-    {
-        JsonObject payload = new()
-        {
-            ["req_1"] = new JsonObject
-            {
-                ["method"] = "DoSearchForQQMusicDesktop",
-                ["module"] = "music.search.SearchCgiService",
-                ["param"] = new JsonObject
-                {
-                    ["num_per_page"] = PageSize,
-                    ["page_num"] = page,
-                    ["query"] = query,
-                    ["search_type"] = searchType,
+                    SingerMid = singerMid,
+                    Begin = (page - 1) * PageSize,
+                    Num = PageSize,
+                    ExStatus = 1,
                 },
             },
         };
 
-        JsonObject res = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload);
-
-        int sum = res["req_1"]?["data"]?["meta"]?["sum"]?.GetValue<int>() ?? 0;
-        string listName = SearchTypeMap.GetValueOrDefault(searchType, "song");
-        JsonArray list = res["req_1"]?["data"]?["body"]?[listName]?["list"]?.AsArray() ?? [];
-
-        return new JsonObject { ["isEnd"] = sum <= page * PageSize, ["data"] = list.DeepClone() };
-    }
-
-    private async Task<JsonObject?> GetSourceUrlAsync(string id, string type)
-    {
-        if (!MediaTypeMap.TryGetValue(type, out (string Prefix, string Extension) typeObj))
-        {
-            typeObj = MediaTypeMap["128"];
-        }
-
-        string guid = Random.Shared.Next(1, 10_000_000).ToString(CultureInfo.InvariantCulture);
-        string filename = $"{typeObj.Prefix}{id}{typeObj.Extension}";
-
-        JsonObject payload = new()
-        {
-            ["req_0"] = new JsonObject
-            {
-                ["module"] = "vkey.GetVkeyServer",
-                ["method"] = "CgiGetVkey",
-                ["param"] = new JsonObject
-                {
-                    ["filename"] = new JsonArray(filename),
-                    ["guid"] = guid,
-                    ["songmid"] = new JsonArray(id),
-                    ["songtype"] = new JsonArray(0),
-                    ["uin"] = string.Empty,
-                    ["loginflag"] = 1,
-                    ["platform"] = "20",
-                },
-            },
-            ["comm"] = new JsonObject
-            {
-                ["uin"] = string.Empty,
-                ["format"] = "json",
-                ["ct"] = 19,
-                ["cv"] = 0,
-                ["authst"] = string.Empty,
-            },
-        };
+        string json = JsonSerializer.Serialize(
+            request,
+            QQJsonContext.Default.QQSingerAlbumRequestDto
+        );
 
         string url = ChangeUrlQuery(
-            new Dictionary<string, string>
-            {
-                ["-"] = "getplaysongvkey",
-                ["g_tk"] = "5381",
-                ["loginUin"] = string.Empty,
-                ["hostUin"] = "0",
-                ["format"] = "json",
-                ["inCharset"] = "utf8",
-                ["outCharset"] = "utf-8",
-                ["notice"] = "0",
-                ["platform"] = "yqq.json",
-                ["needNewCode"] = "0",
-                ["data"] = payload.ToJsonString(),
-            },
+            new Dictionary<string, string> { ["data"] = json },
             "https://u.y.qq.com/cgi-bin/musicu.fcg"
         );
 
-        return await GetJsonAsync(url);
+        QQSingerAlbumResponseDto? response = await GetJsonAsync(
+                url,
+                QQJsonContext.Default.QQSingerAlbumResponseDto
+            )
+            .ConfigureAwait(false);
+        QQSingerAlbumDataDto? data = response?.SingerAlbum?.Data;
+
+        return new QQAlbumPageDto
+        {
+            IsEnd = (data?.Total ?? 0) <= page * PageSize,
+            Data = data?.List ?? [],
+        };
     }
 
-    private async Task<JsonObject?> GetPlayableSourceUrlAsync(string songMid)
+    public async Task<QQSingerPageDto?> GetArtistPageAsync(string artistMid)
     {
-        JsonObject payload = new()
+        ArgumentException.ThrowIfNullOrWhiteSpace(artistMid);
+
+        string html = await GetStringResponseAsync(
+                HttpMethod.Get,
+                $"https://y.qq.com/n/ryqq_v2/singer/{Uri.EscapeDataString(artistMid)}",
+                null,
+                referer: "https://y.qq.com/"
+            )
+            .ConfigureAwait(false);
+
+        return ExtractInitialData(html, QQJsonContext.Default.QQSingerPageDto);
+    }
+
+    public async Task<QQAlbumDetailPageDto?> GetAlbumPageAsync(string albumMid)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(albumMid);
+
+        string html = await GetStringResponseAsync(
+                HttpMethod.Get,
+                $"https://y.qq.com/n/ryqq_v2/albumDetail/{Uri.EscapeDataString(albumMid)}",
+                null,
+                referer: "https://y.qq.com/"
+            )
+            .ConfigureAwait(false);
+
+        return ExtractInitialData(html, QQJsonContext.Default.QQAlbumDetailPageDto);
+    }
+
+    public void Dispose()
+    {
+        if (_ownsClient)
         {
-            ["req_0"] = new JsonObject
-            {
-                ["module"] = "vkey.GetVkeyServer",
-                ["method"] = "CgiGetVkey",
-                ["param"] = new JsonObject
-                {
-                    ["guid"] = Random
-                        .Shared.Next(1, 10_000_000)
-                        .ToString(CultureInfo.InvariantCulture),
-                    ["songmid"] = new JsonArray(songMid),
-                    ["songtype"] = new JsonArray(0),
-                    ["uin"] = "0",
-                    ["loginflag"] = 1,
-                    ["platform"] = "20",
-                },
-            },
-            ["comm"] = new JsonObject
-            {
-                ["uin"] = "0",
-                ["format"] = "json",
-                ["ct"] = 24,
-                ["cv"] = 0,
-            },
-        };
+            _client.Dispose();
+        }
+    }
+
+    private async Task<QQSongPageDto> SearchSongsCoreAsync(string query, int page)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
         string url =
-            $"https://u.y.qq.com/cgi-bin/musicu.fcg?data={Uri.EscapeDataString(payload.ToJsonString())}";
-        return await GetJsonAsync(url);
+            $"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p={page.ToString(CultureInfo.InvariantCulture)}&n={PageSize}&w={Uri.EscapeDataString(query)}&format=json&cr=1&new_json=1";
+
+        QQSearchSongResponseDto? response = await GetJsonAsync(
+                url,
+                QQJsonContext.Default.QQSearchSongResponseDto
+            )
+            .ConfigureAwait(false);
+
+        return new QQSongPageDto
+        {
+            IsEnd = (response?.Data?.Song?.TotalNum ?? 0) <= page * PageSize,
+            Data = response?.Data?.Song?.List ?? [],
+        };
     }
 
-    private async Task<JsonObject> GetArtistAlbumsAsync(JsonObject artistItem, int page)
+    private async Task<QQMusicuSearchResponseDto> SearchMusicuAsync(
+        string query,
+        int page,
+        int searchType
+    )
     {
-        string? singerMid = GetString(artistItem, "singerMID");
-        if (string.IsNullOrEmpty(singerMid))
+        QQMusicuSearchRequestDto request = new()
         {
-            throw new ArgumentException("singerMID 不能为空", nameof(artistItem));
-        }
-
-        JsonObject payload = new()
-        {
-            ["comm"] = new JsonObject { ["ct"] = 24, ["cv"] = 0 },
-            ["singerAlbum"] = new JsonObject
+            Req1 = new QQMusicuSearchRequestItemDto
             {
-                ["method"] = "get_singer_album",
-                ["param"] = new JsonObject
+                Param = new QQMusicuSearchParamDto
                 {
-                    ["singermid"] = singerMid,
-                    ["order"] = "time",
-                    ["begin"] = (page - 1) * PageSize,
-                    ["num"] = PageSize,
-                    ["exstatus"] = 1,
+                    NumPerPage = PageSize,
+                    PageNum = page,
+                    Query = query,
+                    SearchType = searchType,
                 },
-                ["module"] = "music.web_singer_info_svr",
             },
         };
 
-        string url = ChangeUrlQuery(
-            new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
-            "https://u.y.qq.com/cgi-bin/musicu.fcg"
+        string json = JsonSerializer.Serialize(
+            request,
+            QQJsonContext.Default.QQMusicuSearchRequestDto
         );
-        JsonObject res = await GetJsonAsync(url);
 
-        JsonArray albums = [];
-        foreach (JsonNode? item in res["singerAlbum"]?["data"]?["list"]?.AsArray() ?? [])
-        {
-            if (item is JsonObject album)
-            {
-                albums.Add(FormatAlbumItem(album));
-            }
-        }
+        QQMusicuSearchResponseDto? response = await PostJsonAsync(
+                "https://u.y.qq.com/cgi-bin/musicu.fcg",
+                json,
+                QQJsonContext.Default.QQMusicuSearchResponseDto
+            )
+            .ConfigureAwait(false);
 
-        int total = res["singerAlbum"]?["data"]?["total"]?.GetValue<int>() ?? 0;
-        return new JsonObject { ["isEnd"] = total <= page * PageSize, ["data"] = albums };
+        return response ?? new QQMusicuSearchResponseDto();
     }
 
-    private async Task<JsonObject> GetJsonAsync(string url, string referer = "https://y.qq.com")
+    private async Task<QQVKeyResponseDto?> GetVKeyAsync(string songMid)
     {
-        string response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer);
-        return JsonNode.Parse(response)?.AsObject() ?? [];
+        QQVKeyRequestDto request = new()
+        {
+            Req0 = new QQVKeyRequestItemDto
+            {
+                Param = new QQVKeyParamDto
+                {
+                    Guid = Random.Shared.Next(1, 10_000_000).ToString(CultureInfo.InvariantCulture),
+                    SongMid = [songMid],
+                },
+            },
+            Comm = new QQCommRequestDto
+            {
+                Uin = "0",
+                Format = "json",
+                Ct = 24,
+                Cv = 0,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(request, QQJsonContext.Default.QQVKeyRequestDto);
+
+        string url = $"https://u.y.qq.com/cgi-bin/musicu.fcg?data={Uri.EscapeDataString(json)}";
+
+        return await GetJsonAsync(url, QQJsonContext.Default.QQVKeyResponseDto)
+            .ConfigureAwait(false);
     }
 
-    private async Task<JsonObject> PostJsonAsync(
+    private async Task<T?> GetJsonAsync<T>(
         string url,
-        JsonObject payload,
+        JsonTypeInfo<T> typeInfo,
         string referer = "https://y.qq.com"
     )
+        where T : class
     {
-        string response = await GetStringResponseAsync(
-            HttpMethod.Post,
-            url,
-            null,
-            payload.ToJsonString(),
-            "application/json",
-            referer
-        );
-        return JsonNode.Parse(response)?.AsObject() ?? [];
+        string response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer)
+            .ConfigureAwait(false);
+        return JsonSerializer.Deserialize(response, typeInfo);
     }
 
-    private async Task<JsonObject> GetJsonpAsync(string url, string referer = "https://y.qq.com")
+    private async Task<T?> PostJsonAsync<T>(
+        string url,
+        string json,
+        JsonTypeInfo<T> typeInfo,
+        string referer = "https://y.qq.com"
+    )
+        where T : class
     {
-        string response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer);
-        return ParseJsonp(response) ?? [];
+        string response = await GetStringResponseAsync(
+                HttpMethod.Post,
+                url,
+                null,
+                json,
+                "application/json",
+                referer
+            )
+            .ConfigureAwait(false);
+        return JsonSerializer.Deserialize(response, typeInfo);
+    }
+
+    private async Task<T?> GetJsonpAsync<T>(
+        string url,
+        JsonTypeInfo<T> typeInfo,
+        string referer = "https://y.qq.com"
+    )
+        where T : class
+    {
+        string response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer)
+            .ConfigureAwait(false);
+        string? json = ParseJsonp(response);
+        return json is null ? null : JsonSerializer.Deserialize(json, typeInfo);
     }
 
     private async Task<string> GetStringResponseAsync(
@@ -451,199 +397,21 @@ internal sealed partial class QQMusicApiService : IDisposable
             headers.Add("Referer", referer);
         }
 
-        using HttpResponseMessage response = await _client.SendAsync(
-            method,
-            url,
-            query,
-            headers,
-            content,
-            contentType
-        );
+        using HttpResponseMessage response = await _client
+            .SendAsync(method, url, query, headers, content, contentType)
+            .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
-    private static JsonObject? ParseJsonp(string raw)
+    private static string? ParseJsonp(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
             return null;
         }
 
-        string json = JsonpWrapperRegex().Replace(raw, string.Empty);
-        return JsonNode.Parse(json)?.AsObject();
-    }
-
-    private static JsonObject FormatMusicItem(JsonObject source)
-    {
-        JsonObject? albumObject = source["album"] as JsonObject;
-        string? albumId = GetString(source, "albumid") ?? GetString(albumObject, "id");
-        string? albumMid = GetString(source, "albummid") ?? GetString(albumObject, "mid");
-        string? albumName = GetString(source, "albumname") ?? GetString(albumObject, "title");
-
-        JsonArray singers = source["singer"]?.AsArray() ?? [];
-        string singerNames = string.Join(
-            ", ",
-            singers
-                .OfType<JsonObject>()
-                .Select(s => GetString(s, "name"))
-                .Where(name => !string.IsNullOrEmpty(name))!
-        );
-
-        JsonArray singerItems = [];
-        foreach (JsonObject singer in singers.OfType<JsonObject>())
-        {
-            singerItems.Add(
-                new JsonObject
-                {
-                    ["id"] = GetString(singer, "id"),
-                    ["mid"] = GetString(singer, "mid"),
-                    ["name"] = GetString(singer, "name"),
-                }
-            );
-        }
-
-        long duration = int.TryParse(
-            GetString(source, "interval"),
-            NumberStyles.Integer,
-            CultureInfo.InvariantCulture,
-            out int seconds
-        )
-            ? seconds * 1000L
-            : 0L;
-
-        return new JsonObject
-        {
-            ["id"] = GetString(source, "id") ?? GetString(source, "songid"),
-            ["songmid"] = GetString(source, "mid") ?? GetString(source, "songmid"),
-            ["title"] = GetString(source, "title") ?? GetString(source, "songname"),
-            ["artist"] = singerNames,
-            ["artwork"] = string.IsNullOrEmpty(albumMid)
-                ? null
-                : $"https://y.gtimg.cn/music/photo_new/T002R800x800M000{albumMid}.jpg",
-            ["album"] = albumName,
-            ["lrc"] = GetString(source, "lyric"),
-            ["albumid"] = albumId,
-            ["albummid"] = albumMid,
-            ["duration"] = duration,
-            ["singers"] = singerItems,
-        };
-    }
-
-    private static JsonObject FormatAlbumItem(JsonObject source)
-    {
-        string? albumMid = GetString(source, "albumMID") ?? GetString(source, "album_mid");
-
-        return new JsonObject
-        {
-            ["id"] = GetString(source, "albumID") ?? GetString(source, "albumid"),
-            ["albumMID"] = albumMid,
-            ["title"] = GetString(source, "albumName") ?? GetString(source, "album_name"),
-            ["artwork"] = GetString(source, "albumPic")
-                ?? (
-                    string.IsNullOrEmpty(albumMid)
-                        ? null
-                        : $"https://y.gtimg.cn/music/photo_new/T002R300x300M000{albumMid}.jpg"
-                ),
-            ["date"] = GetString(source, "publicTime") ?? GetString(source, "pub_time"),
-            ["singerID"] = GetString(source, "singerID") ?? GetString(source, "singer_id"),
-            ["artist"] = GetString(source, "singerName") ?? GetString(source, "singer_name"),
-            ["singerMID"] = GetString(source, "singerMID") ?? GetString(source, "singer_mid"),
-            ["description"] = GetString(source, "desc"),
-        };
-    }
-
-    private static JsonObject FormatArtistItem(JsonObject source) =>
-        new()
-        {
-            ["name"] = GetString(source, "singerName"),
-            ["id"] = GetString(source, "singerID"),
-            ["singerMID"] = GetString(source, "singerMID"),
-            ["avatar"] = GetString(source, "singerPic"),
-            ["worksNum"] = GetString(source, "songNum"),
-        };
-
-    private static JsonObject FormatMusicSheetItem(JsonObject source) =>
-        new()
-        {
-            ["title"] = GetString(source, "dissname"),
-            ["createAt"] = GetString(source, "createtime"),
-            ["description"] = GetString(source, "introduction"),
-            ["playCount"] = GetString(source, "listennum"),
-            ["worksNums"] = GetString(source, "song_count"),
-            ["artwork"] = GetString(source, "imgurl"),
-            ["id"] = GetString(source, "dissid"),
-            ["artist"] = GetString(source["creator"] as JsonObject, "name"),
-        };
-
-    private static string? GetString(JsonObject? source, string key)
-    {
-        if (
-            source is null
-            || !source.TryGetPropertyValue(key, out JsonNode? value)
-            || value is null
-        )
-        {
-            return null;
-        }
-
-        return value switch
-        {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
-                intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
-                longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
-                doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
-                boolValue.ToString(),
-            _ => value.ToJsonString(),
-        };
-    }
-
-    private static string ChangeUrlQuery(IReadOnlyDictionary<string, string> query, string baseUrl)
-    {
-        int index = baseUrl.IndexOf('?', StringComparison.Ordinal);
-        string url = index == -1 ? baseUrl : baseUrl[..index];
-        Dictionary<string, string> currentQuery = [with(StringComparer.Ordinal)];
-
-        if (index != -1)
-        {
-            string queryString = baseUrl[(index + 1)..];
-            foreach (string item in queryString.Split('&', StringSplitOptions.RemoveEmptyEntries))
-            {
-                string[] temp = item.Split('=', 2, StringSplitOptions.None);
-                string key = temp[0];
-                string value = temp.Length > 1 ? Uri.UnescapeDataString(temp[1]) : string.Empty;
-                currentQuery[key] = value;
-            }
-        }
-
-        foreach ((string? key, string? value) in query)
-        {
-            currentQuery[key] = value;
-        }
-
-        StringBuilder builder = new();
-        foreach ((string? key, string? value) in currentQuery)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                continue;
-            }
-
-            if (builder.Length > 0)
-            {
-                builder.Append('&');
-            }
-
-            builder.Append(Uri.EscapeDataString(key));
-            builder.Append('=');
-            builder.Append(Uri.EscapeDataString(value));
-        }
-
-        return builder.Length > 0 ? $"{url}?{builder}" : url;
+        return JsonpWrapperRegex().Replace(raw, string.Empty);
     }
 
     private static string? DecodeLyricBase64(string? value)
@@ -655,44 +423,16 @@ internal sealed partial class QQMusicApiService : IDisposable
 
         try
         {
-            byte[] bytes = Convert.FromBase64String(value);
-            return WebUtility.HtmlDecode(Encoding.UTF8.GetString(bytes));
+            return Encoding.UTF8.GetString(Convert.FromBase64String(value));
         }
-        catch
+        catch (FormatException)
         {
             return null;
         }
     }
 
-    public async Task<JsonObject?> GetArtistPageAsync(string artistMid)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(artistMid);
-
-        string html = await GetStringResponseAsync(
-            HttpMethod.Get,
-            $"https://y.qq.com/n/ryqq_v2/singer/{Uri.EscapeDataString(artistMid)}",
-            null,
-            referer: "https://y.qq.com/"
-        );
-
-        return ExtractInitialData(html);
-    }
-
-    public async Task<JsonObject?> GetAlbumPageAsync(string albumMid)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(albumMid);
-
-        string html = await GetStringResponseAsync(
-            HttpMethod.Get,
-            $"https://y.qq.com/n/ryqq_v2/albumDetail/{Uri.EscapeDataString(albumMid)}",
-            null,
-            referer: "https://y.qq.com/"
-        );
-
-        return ExtractInitialData(html);
-    }
-
-    private static JsonObject? ExtractInitialData(string html)
+    private static T? ExtractInitialData<T>(string html, JsonTypeInfo<T> typeInfo)
+        where T : class
     {
         const string marker = "window.__INITIAL_DATA__";
         int index = html.IndexOf(marker, StringComparison.Ordinal);
@@ -715,17 +455,37 @@ internal sealed partial class QQMusicApiService : IDisposable
         }
 
         json = json.Replace("undefined", "null", StringComparison.Ordinal);
-        return JsonNode.Parse(json)?.AsObject();
+        return JsonSerializer.Deserialize(json, typeInfo);
+    }
+
+    private static string ChangeUrlQuery(Dictionary<string, string> query, string url)
+    {
+        if (query.Count == 0)
+        {
+            return url;
+        }
+
+        StringBuilder builder = new(url);
+        builder.Append(url.Contains('?', StringComparison.Ordinal) ? '&' : '?');
+
+        bool first = true;
+        foreach ((string key, string value) in query)
+        {
+            if (!first)
+            {
+                builder.Append('&');
+            }
+
+            first = false;
+            builder
+                .Append(Uri.EscapeDataString(key))
+                .Append('=')
+                .Append(Uri.EscapeDataString(value));
+        }
+
+        return builder.ToString();
     }
 
     private static string ChooseUserAgent() =>
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
-
-    public void Dispose()
-    {
-        if (_ownsClient)
-        {
-            _client.Dispose();
-        }
-    }
 }

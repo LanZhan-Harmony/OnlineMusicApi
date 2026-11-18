@@ -1,6 +1,6 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Net;
 using System.Security.Cryptography;
+using OnlineMusicApi.Internal.Infrastructure.Http;
 using OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;
 using static OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.CloudMusicApiProvider;
 
@@ -236,7 +236,10 @@ internal static class CloudMusicApiProviders
             "linuxapi",
             [
                 new("os", "pc"),
-                new("_ntes_nuid", RandomNumberGenerator.GetBytes(16).ToHexStringLower()),
+                new(
+                    "_ntes_nuid",
+                    Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()
+                ),
             ]
         )
     );

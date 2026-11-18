@@ -1,4 +1,3 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Text.Json.Serialization;
 using OnlineMusicApi.Internal.Contracts.CloudMusic;
 

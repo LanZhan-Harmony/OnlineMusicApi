@@ -10,4 +10,10 @@ namespace OnlineMusicApi.Internal.Providers.FiveSing;
 [JsonSerializable(typeof(FiveSingAlbumSongsDto))]
 [JsonSerializable(typeof(FiveSingMediaDto))]
 [JsonSerializable(typeof(FiveSingLyricDto))]
+[JsonSerializable(typeof(FiveSingSearchSongResponseDto))]
+[JsonSerializable(typeof(FiveSingSearchAlbumResponseDto))]
+[JsonSerializable(typeof(FiveSingSearchArtistResponseDto))]
+[JsonSerializable(typeof(FiveSingAlbumSongsResponseDto))]
+[JsonSerializable(typeof(FiveSingLyricResponseDto))]
+[JsonSerializable(typeof(FiveSingSongUrlResponseDto))]
 internal sealed partial class FiveSingJsonContext : JsonSerializerContext;

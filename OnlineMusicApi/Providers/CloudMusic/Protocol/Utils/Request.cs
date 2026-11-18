@@ -1,11 +1,10 @@
-﻿using OnlineMusicApi.Internal.Infrastructure.Http;
-using OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Extensions;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using OnlineMusicApi.Internal.Infrastructure.Http;
+
 namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;
 
 internal static partial class Request
@@ -93,12 +92,18 @@ internal static partial class Request
                 url = ApiTypeRegex().Replace(url, "weapi");
                 break;
             case "linuxapi":
+                JsonObject linuxParams = [];
+                foreach ((string key, string value) in data)
+                {
+                    linuxParams[key] = value;
+                }
+
                 data = Crypto.LinuxApi(
-                    new Dictionary<string, object>
+                    new JsonObject
                     {
-                        { "method", method.Method },
-                        { "url", ApiTypeRegex().Replace(url, "api") },
-                        { "params", data },
+                        ["method"] = method.Method,
+                        ["url"] = ApiTypeRegex().Replace(url, "api"),
+                        ["params"] = linuxParams,
                     }
                 );
                 headers["User-Agent"] =
@@ -145,7 +150,13 @@ internal static partial class Request
                 }
 
                 headers["Cookie"] = BuildCookieHeader(header);
-                data["header"] = JsonSerializer.Serialize(header);
+                JsonObject headerJson = [];
+                foreach ((string key, string value) in header)
+                {
+                    headerJson[key] = value;
+                }
+
+                data["header"] = headerJson.ToJsonString();
                 data = Crypto.EApi(options.Url ?? "", data);
                 url = ApiTypeRegex().Replace(url, "eapi");
                 break;
@@ -193,9 +204,10 @@ internal static partial class Request
                 string cookieValue = CookieDomainRegex().Replace(rawCookie, "");
                 if (!string.IsNullOrEmpty(cookieValue))
                 {
-                    cookieArray.Add(JsonValue.Create(cookieValue));
+                    cookieArray = new JsonArray([.. cookieArray, JsonValue.Create(cookieValue)]);
                 }
             }
+
             answer["cookie"] = cookieArray;
 
             if (options.Crypto == "eapi")
@@ -256,7 +268,7 @@ internal static partial class Request
         catch (Exception ex)
         {
             answer["status"] = 502;
-            answer["body"] = new JsonObject { { "code", 502 }, { "msg", ex.ToFullString() } };
+            answer["body"] = new JsonObject { { "code", 502 }, { "msg", ex.ToString() } };
             return (false, answer);
         }
         finally

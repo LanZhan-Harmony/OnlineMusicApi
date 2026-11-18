@@ -1,5 +1,7 @@
+using System.Globalization;
+using System.Net;
+using System.Text.RegularExpressions;
 using OnlineMusicApi.Internal.Contracts.Bilibili;
-using OnlineMusicApi.Internal.Providers.Shared;
 
 namespace OnlineMusicApi.Internal.Providers.Bilibili;
 
@@ -23,25 +25,27 @@ internal static class BilibiliSongMapper
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        string key = ValueNormalizer.First(dto.Bvid, dto.Aid);
+        string key = First(
+            dto.Bvid,
+            dto.Aid > 0 ? dto.Aid.ToString(CultureInfo.InvariantCulture) : null
+        );
         if (key.Length == 0)
         {
             return null;
         }
 
+        string title = CleanTitle(First(dto.Title, dto.Part));
+        string author = First(dto.Author, dto.Owner?.Name);
+
         return new Song
         {
-            Id = SongIdOf(key, dto.Cid ?? dto.Id),
-            Title = dto.Title ?? string.Empty,
-            Artists = ToArtists(dto.Artist),
-            Album = new AlbumRef
-            {
-                Id = AlbumIdOf(key),
-                Title = dto.Album ?? dto.Title ?? string.Empty,
-            },
-            Duration = dto.Duration > 0 ? TimeSpan.FromSeconds(dto.Duration) : null,
-            CoverUrl = dto.Artwork ?? string.Empty,
-            Year = ParseYear(dto.Date),
+            Id = SongIdOf(key, dto.Cid?.ToString(CultureInfo.InvariantCulture)),
+            Title = title,
+            Artists = ToArtists(author),
+            Album = new AlbumRef { Id = AlbumIdOf(key), Title = title },
+            Duration = ParseDuration(dto.DurationText),
+            CoverUrl = NormalizeImageUrl(dto.Pic),
+            Year = ParseYear(dto.PubDate ?? dto.Created),
         };
     }
 
@@ -49,15 +53,18 @@ internal static class BilibiliSongMapper
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        string key = ValueNormalizer.First(dto.Bvid, dto.Aid);
+        string key = First(
+            dto.Bvid,
+            dto.Aid > 0 ? dto.Aid.ToString(CultureInfo.InvariantCulture) : null
+        );
 
         return new Album
         {
             Id = AlbumIdOf(key),
-            Title = dto.Title ?? string.Empty,
-            Artists = ToArtists(dto.Artist),
-            Year = ParseYear(dto.Date),
-            CoverUrl = dto.Artwork ?? string.Empty,
+            Title = CleanTitle(First(dto.Title, dto.Part)),
+            Artists = ToArtists(First(dto.Author, dto.Owner?.Name)),
+            Year = ParseYear(dto.PubDate ?? dto.Created),
+            CoverUrl = NormalizeImageUrl(dto.Pic),
         };
     }
 
@@ -67,11 +74,24 @@ internal static class BilibiliSongMapper
 
         return new Artist
         {
-            Id = ArtistIdOf(dto.Id ?? string.Empty),
+            Id = ArtistIdOf(dto.Mid.ToString(CultureInfo.InvariantCulture)),
             Name = dto.Name ?? string.Empty,
-            SongCount = ValueNormalizer.ToInt(dto.WorksNum),
+            SongCount = dto.Videos,
             Description = dto.Description ?? string.Empty,
-            AvatarUrl = dto.Avatar ?? string.Empty,
+            AvatarUrl = NormalizeImageUrl(dto.Avatar),
+        };
+    }
+
+    public static Artist FromUserCard(ArtistId id, BilibiliUserCardDto? dto)
+    {
+        BilibiliUserCardInfoDto? card = dto?.Data?.Card;
+
+        return new Artist
+        {
+            Id = id,
+            Name = card?.Name ?? string.Empty,
+            Description = card?.Sign ?? string.Empty,
+            AvatarUrl = NormalizeImageUrl(card?.Face),
         };
     }
 
@@ -91,7 +111,7 @@ internal static class BilibiliSongMapper
             RequestedQuality = requested,
             ActualQuality = AudioQuality.Low,
             Codec = "m4a",
-            Headers = dto.Headers ?? [],
+            Headers = dto.Headers ?? new Dictionary<string, string>(),
         };
     }
 
@@ -103,25 +123,68 @@ internal static class BilibiliSongMapper
 
     public static bool IsAid(string key)
     {
-        return long.TryParse(
-            key,
-            System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out _
-        );
+        return long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
     }
 
-    public static Artist FromUserCard(ArtistId id, BilibiliUserCardDto? dto)
+    private static IReadOnlyList<ArtistRef> ToArtists(string? name)
     {
-        BilibiliUserCardInfoDto? card = dto?.Data?.Card;
+        return string.IsNullOrWhiteSpace(name)
+            ? []
+            : [new ArtistRef { Id = ArtistIdOf(string.Empty), Name = CleanTitle(name) }];
+    }
 
-        return new Artist
+    private static string CleanTitle(string value)
+    {
+        return WebUtility.HtmlDecode(Regex.Replace(value, "<.*?>", string.Empty)).Trim();
+    }
+
+    private static TimeSpan? ParseDuration(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            Id = id,
-            Name = card?.Name ?? string.Empty,
-            Description = card?.Sign ?? string.Empty,
-            AvatarUrl = NormalizeImageUrl(card?.Face),
-        };
+            return null;
+        }
+
+        if (!value.Contains(':', StringComparison.Ordinal))
+        {
+            return
+                int.TryParse(
+                    value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out int seconds
+                )
+                && seconds > 0
+                ? TimeSpan.FromSeconds(seconds)
+                : null;
+        }
+
+        int sum = 0;
+        foreach (string part in value.Split(':', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (
+                !int.TryParse(
+                    part,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out int number
+                )
+            )
+            {
+                continue;
+            }
+
+            sum = 60 * sum + number;
+        }
+
+        return sum > 0 ? TimeSpan.FromSeconds(sum) : null;
+    }
+
+    private static int? ParseYear(long? unixSeconds)
+    {
+        return unixSeconds is > 0
+            ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds.Value).Year
+            : null;
     }
 
     private static string NormalizeImageUrl(string? url)
@@ -134,28 +197,9 @@ internal static class BilibiliSongMapper
         return url.StartsWith("//", StringComparison.Ordinal) ? "https:" + url : url;
     }
 
-    private static IReadOnlyList<ArtistRef> ToArtists(string? name)
+    private static string First(params string?[] values)
     {
-        return string.IsNullOrWhiteSpace(name)
-            ? []
-            : [new ArtistRef { Id = ArtistIdOf(string.Empty), Name = name.Trim() }];
-    }
-
-    private static int? ParseYear(string? value)
-    {
-        if (
-            value is { Length: >= 4 }
-            && int.TryParse(
-                value.AsSpan(0, 4),
-                System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out int year
-            )
-        )
-        {
-            return year;
-        }
-
-        return null;
+        return values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
+            ?? string.Empty;
     }
 }
