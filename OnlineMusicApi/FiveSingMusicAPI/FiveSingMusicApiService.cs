@@ -85,14 +85,12 @@ public sealed partial class FiveSingMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var id =
-            GetString(musicItem, "id")
+        var id = GetString(musicItem, "id")
             ?? throw new ArgumentException("musicItem.id 不能为空", nameof(musicItem));
-        var typeEname =
-            GetString(musicItem, "typeEname")
+        var typeEname = GetString(musicItem, "typeEname")
             ?? throw new ArgumentException("musicItem.typeEname 不能为空", nameof(musicItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://5sing.kugou.com/fm/m/json/lrc",
             new QueryCollection { { "songId", id }, { "songType", typeEname } },
             null
@@ -105,18 +103,17 @@ public sealed partial class FiveSingMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(albumItem);
 
-        var id =
-            GetString(albumItem, "id")
+        var id = GetString(albumItem, "id")
             ?? throw new ArgumentException("albumItem.id 不能为空", nameof(albumItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://service.5sing.kugou.com/song/getPlayListSong",
             new QueryCollection { { "id", id } },
             BuildMobileHeaders()
         );
 
-        var musicList = new JsonArray();
-        foreach (var item in res["data"]?.AsArray() ?? [])
+        JsonArray musicList = [];
+        foreach (JsonNode? item in res["data"]?.AsArray() ?? [])
         {
             if (item is not JsonObject song)
             {
@@ -189,10 +186,10 @@ public sealed partial class FiveSingMusicApiService : IDisposable
         var typeName = GetString(topListItem, "typeName") ?? string.Empty;
 
         var html = await GetStringAsync($"http://5sing.kugou.com/top{id}", null, null);
-        var rows = TableRowRegex().Matches(html);
+        MatchCollection rows = TableRowRegex().Matches(html);
 
-        var list = new JsonArray();
-        foreach (var row in rows.Skip(1))
+        JsonArray list = [];
+        foreach (Match? row in rows.Skip(1))
         {
             var rowText = row.Value;
             var title = HtmlToText(TitleCellRegex().Match(rowText).Groups[1].Value).Trim();
@@ -221,7 +218,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
             );
         }
 
-        var result = CloneObject(topListItem);
+        JsonObject result = CloneObject(topListItem);
         result["musicList"] = list;
         return result;
     }
@@ -242,7 +239,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
             return null;
         }
 
-        var query = new QueryCollection
+        QueryCollection query = new QueryCollection
         {
             { "songid", songId },
             { "songtype", songType },
@@ -268,7 +265,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
             trimmed = trimmed[1..^1];
         }
 
-        var root = JsonNode.Parse(trimmed)?.AsObject();
+        JsonObject? root = JsonNode.Parse(trimmed)?.AsObject();
         if (root?["data"] is not JsonObject data)
         {
             return null;
@@ -286,7 +283,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
 
     private async Task<JsonObject> SearchAsync(string query, int page, int type, int filter)
     {
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://search.5sing.kugou.com/home/json",
             new QueryCollection
             {
@@ -299,8 +296,8 @@ public sealed partial class FiveSingMusicApiService : IDisposable
             BuildSearchHeaders()
         );
 
-        var data = new JsonArray();
-        foreach (var item in res["list"]?.AsArray() ?? [])
+        JsonArray data = [];
+        foreach (JsonNode? item in res["list"]?.AsArray() ?? [])
         {
             if (item is not JsonObject source)
             {
@@ -333,15 +330,14 @@ public sealed partial class FiveSingMusicApiService : IDisposable
             _bzEnd = false;
         }
 
-        var artistId =
-            GetString(artistItem, "id")
+        var artistId = GetString(artistItem, "id")
             ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
         var artistName = GetString(artistItem, "name") ?? string.Empty;
 
-        var data = new JsonArray();
+        JsonArray data = [];
         if (!_fcEnd)
         {
-            var fc = await GetArtistTypeSongListAsync(artistId, page, "fc");
+            JsonObject fc = await GetArtistTypeSongListAsync(artistId, page, "fc");
             if ((fc["count"]?.GetValue<int>() ?? 0) <= page * PageSize)
             {
                 _fcEnd = true;
@@ -352,7 +348,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
 
         if (!_ycEnd)
         {
-            var yc = await GetArtistTypeSongListAsync(artistId, page, "yc");
+            JsonObject yc = await GetArtistTypeSongListAsync(artistId, page, "yc");
             if ((yc["count"]?.GetValue<int>() ?? 0) <= page * PageSize)
             {
                 _ycEnd = true;
@@ -363,7 +359,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
 
         if (!_bzEnd)
         {
-            var bz = await GetArtistTypeSongListAsync(artistId, page, "bz");
+            JsonObject bz = await GetArtistTypeSongListAsync(artistId, page, "bz");
             if ((bz["count"]?.GetValue<int>() ?? 0) <= page * PageSize)
             {
                 _bzEnd = true;
@@ -402,7 +398,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
         string typeName
     )
     {
-        foreach (var item in source["data"]?.AsArray() ?? [])
+        foreach (JsonNode? item in source["data"]?.AsArray() ?? [])
         {
             if (item is not JsonObject song)
             {
@@ -440,7 +436,7 @@ public sealed partial class FiveSingMusicApiService : IDisposable
         IEnumerable<KeyValuePair<string, string>>? headers
     )
     {
-        using var response = await _client.SendAsync(
+        using HttpResponseMessage response = await _client.SendAsync(
             HttpMethod.Get,
             url,
             query,
@@ -543,7 +539,11 @@ public sealed partial class FiveSingMusicApiService : IDisposable
 
     private static string? GetString(JsonObject? source, string key)
     {
-        if (source is null || !source.TryGetPropertyValue(key, out var value) || value is null)
+        if (
+            source is null
+            || !source.TryGetPropertyValue(key, out JsonNode? value)
+            || value is null
+        )
         {
             return null;
         }
@@ -565,8 +565,8 @@ public sealed partial class FiveSingMusicApiService : IDisposable
 
     private static JsonObject CloneObject(JsonObject source)
     {
-        var clone = new JsonObject();
-        foreach (var (key, value) in source)
+        JsonObject clone = [];
+        foreach ((string? key, JsonNode? value) in source)
         {
             clone[key] = value?.DeepClone();
         }

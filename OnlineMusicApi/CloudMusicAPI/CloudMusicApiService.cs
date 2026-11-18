@@ -191,7 +191,7 @@ public sealed partial class CloudMusicApiService : IDisposable
     )
     {
         ArgumentNullException.ThrowIfNull(typeInfo);
-        var (isOk, json) = await RequestJsonAsync(provider, queries);
+        (bool isOk, JsonObject? json) = await RequestJsonAsync(provider, queries);
         return (isOk, json.Deserialize(typeInfo));
     }
 
@@ -207,7 +207,13 @@ public sealed partial class CloudMusicApiService : IDisposable
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(options);
 
-        var (isOk, json) = await Request.CreateRequest(_client, method, url, data, options);
+        (bool isOk, JsonObject? json) = await Request.CreateRequest(
+            _client,
+            method,
+            url,
+            data,
+            options
+        );
         if (json["body"] is not JsonObject body)
         {
             return (

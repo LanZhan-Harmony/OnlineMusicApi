@@ -69,7 +69,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
             return null;
         }
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "https://antiserver.kuwo.cn/anti.s",
             new QueryCollection
             {
@@ -99,17 +99,16 @@ public sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var id =
-            GetString(musicItem, "id")
+        var id = GetString(musicItem, "id")
             ?? throw new ArgumentException("musicItem.id 不能为空", nameof(musicItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://m.kuwo.cn/newh5/singles/songinfoandlrc",
             new QueryCollection { { "musicId", id }, { "httpStatus", "1" } }
         );
 
-        var lines = new StringBuilder();
-        foreach (var item in res["data"]?["lrclist"]?.AsArray() ?? [])
+        StringBuilder lines = new StringBuilder();
+        foreach (JsonNode? item in res["data"]?["lrclist"]?.AsArray() ?? [])
         {
             if (item is not JsonObject lyricLine)
             {
@@ -133,11 +132,10 @@ public sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(albumItem);
 
-        var albumId =
-            GetString(albumItem, "id")
+        var albumId = GetString(albumItem, "id")
             ?? throw new ArgumentException("albumItem.id 不能为空", nameof(albumItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://search.kuwo.cn/r.s",
             new QueryCollection
             {
@@ -159,8 +157,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var musicList = new JsonArray();
-        foreach (var song in res["musiclist"]?.AsArray() ?? [])
+        JsonArray musicList = [];
+        foreach (JsonNode? song in res["musiclist"]?.AsArray() ?? [])
         {
             if (song is not JsonObject item || !MusicListFilter(item))
             {
@@ -187,18 +185,18 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     public async Task<JsonArray> GetTopListsAsync()
     {
-        var res = await GetJsonAsync("http://wapi.kuwo.cn/api/pc/bang/list");
+        JsonObject res = await GetJsonAsync("http://wapi.kuwo.cn/api/pc/bang/list");
 
-        var result = new JsonArray();
-        foreach (var group in res["child"]?.AsArray() ?? [])
+        JsonArray result = [];
+        foreach (JsonNode? group in res["child"]?.AsArray() ?? [])
         {
             if (group is not JsonObject g)
             {
                 continue;
             }
 
-            var data = new JsonArray();
-            foreach (var item in g["child"]?.AsArray() ?? [])
+            JsonArray data = [];
+            foreach (JsonNode? item in g["child"]?.AsArray() ?? [])
             {
                 if (item is not JsonObject top)
                 {
@@ -209,8 +207,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
                     new JsonObject
                     {
                         ["id"] = GetString(top, "sourceid"),
-                        ["coverImg"] =
-                            GetString(top, "pic5")
+                        ["coverImg"] = GetString(top, "pic5")
                             ?? GetString(top, "pic2")
                             ?? GetString(top, "pic"),
                         ["title"] = GetString(top, "name"),
@@ -229,11 +226,10 @@ public sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(topListItem);
 
-        var id =
-            GetString(topListItem, "id")
+        var id = GetString(topListItem, "id")
             ?? throw new ArgumentException("topListItem.id 不能为空", nameof(topListItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://kbangserver.kuwo.cn/ksong.s",
             new QueryCollection
             {
@@ -252,8 +248,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var musicList = new JsonArray();
-        foreach (var item in res["musiclist"]?.AsArray() ?? [])
+        JsonArray musicList = [];
+        foreach (JsonNode? item in res["musiclist"]?.AsArray() ?? [])
         {
             if (item is not JsonObject song)
             {
@@ -274,7 +270,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
             );
         }
 
-        var result = new JsonObject(topListItem) { ["musicList"] = musicList };
+        JsonObject result = new JsonObject(topListItem) { ["musicList"] = musicList };
         return result;
     }
 
@@ -288,18 +284,20 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
         var page = 1;
         var totalPage = 30;
-        var musicList = new JsonArray();
+        JsonArray musicList = [];
 
         while (page < totalPage)
         {
             try
             {
-                var data = await GetMusicSheetResponseByIdAsync(id, page, 80);
+                JsonObject data = await GetMusicSheetResponseByIdAsync(id, page, 80);
                 var total = data["total"]?.GetValue<int>() ?? 0;
                 totalPage = Math.Max(1, (int)Math.Ceiling(total / 80d));
 
                 foreach (
-                    var item in data["musicList"]?.AsArray() ?? data["musiclist"]?.AsArray() ?? []
+                    JsonNode? item in data["musicList"]?.AsArray()
+                        ?? data["musiclist"]?.AsArray()
+                        ?? []
                 )
                 {
                     if (item is not JsonObject song || !MusicListFilter(song))
@@ -335,7 +333,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     public async Task<JsonObject> GetRecommendSheetTagsAsync()
     {
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://wapi.kuwo.cn/api/pc/classify/playlist/getTagList",
             new QueryCollection
             {
@@ -350,16 +348,16 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var data = new JsonArray();
-        foreach (var group in res["data"]?.AsArray() ?? [])
+        JsonArray data = [];
+        foreach (JsonNode? group in res["data"]?.AsArray() ?? [])
         {
             if (group is not JsonObject g)
             {
                 continue;
             }
 
-            var groupData = new JsonArray();
-            foreach (var item in g["data"]?.AsArray() ?? [])
+            JsonArray groupData = [];
+            foreach (JsonNode? item in g["data"]?.AsArray() ?? [])
             {
                 if (item is not JsonObject tag)
                 {
@@ -384,8 +382,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
             data.Add(new JsonObject { ["title"] = GetString(g, "name"), ["data"] = groupData });
         }
 
-        var pinned = new JsonArray
-        {
+        JsonArray pinned =
+        [
             new JsonObject
             {
                 ["id"] = "1848",
@@ -410,7 +408,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
                 ["title"] = "欧美",
                 ["digest"] = "10000",
             },
-        };
+        ];
 
         return new JsonObject { ["data"] = data, ["pinned"] = pinned };
     }
@@ -429,7 +427,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
         {
             if (string.Equals(digest, "10000", StringComparison.Ordinal))
             {
-                var payload = await GetJsonAsync(
+                JsonObject payload = await GetJsonAsync(
                     "http://wapi.kuwo.cn/api/pc/classify/playlist/getTagPlayList",
                     new QueryCollection
                     {
@@ -445,7 +443,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
             else
             {
-                var payload = await GetJsonAsync(
+                JsonObject payload = await GetJsonAsync(
                     "http://mobileinterfaces.kuwo.cn/er.s",
                     new QueryCollection
                     {
@@ -456,15 +454,15 @@ public sealed partial class KuwoMusicApiService : IDisposable
                     }
                 );
 
-                var data = new JsonArray();
-                foreach (var group in payload["array"]?.AsArray() ?? [])
+                JsonArray data = [];
+                foreach (JsonNode? group in payload["array"]?.AsArray() ?? [])
                 {
                     if (group is not JsonObject g)
                     {
                         continue;
                     }
 
-                    foreach (var item in g["list"]?.AsArray() ?? [])
+                    foreach (JsonNode? item in g["list"]?.AsArray() ?? [])
                     {
                         data.Add(item?.DeepClone());
                     }
@@ -475,7 +473,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
         }
         else
         {
-            var payload = await GetJsonAsync(
+            JsonObject payload = await GetJsonAsync(
                 "https://wapi.kuwo.cn/api/pc/classify/playlist/getRcmPlayList",
                 new QueryCollection
                 {
@@ -492,8 +490,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
         var total = result["total"]?.GetValue<int>() ?? 0;
         var isEnd = page * pageSize >= total;
-        var mapped = new JsonArray();
-        foreach (var item in result["data"]?.AsArray() ?? [])
+        JsonArray mapped = [];
+        foreach (JsonNode? item in result["data"]?.AsArray() ?? [])
         {
             if (item is not JsonObject sheet)
             {
@@ -520,16 +518,15 @@ public sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(sheet);
 
-        var id =
-            GetString(sheet, "id")
+        var id = GetString(sheet, "id")
             ?? throw new ArgumentException("sheet.id 不能为空", nameof(sheet));
-        var res = await GetMusicSheetResponseByIdAsync(id, page, PageSize);
+        JsonObject res = await GetMusicSheetResponseByIdAsync(id, page, PageSize);
 
         var total = res["total"]?.GetValue<int>() ?? 0;
-        var list = res["musiclist"]?.AsArray() ?? [];
-        var musicList = new JsonArray();
+        JsonArray list = res["musiclist"]?.AsArray() ?? [];
+        JsonArray musicList = [];
 
-        foreach (var item in list)
+        foreach (JsonNode? item in list)
         {
             if (item is not JsonObject song || !MusicListFilter(song))
             {
@@ -555,7 +552,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     private async Task<JsonObject> SearchAsync(string query, int page, string searchType)
     {
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://search.kuwo.cn/r.s",
             new QueryCollection
             {
@@ -571,7 +568,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var mapped = new JsonArray();
+        JsonArray mapped = [];
         IEnumerable<JsonNode?> list = searchType switch
         {
             "music" => res["abslist"]?.AsArray() ?? [],
@@ -581,7 +578,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
             _ => [],
         };
 
-        foreach (var item in list)
+        foreach (JsonNode? item in list)
         {
             if (item is not JsonObject source)
             {
@@ -614,11 +611,10 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     private async Task<JsonObject> GetArtistMusicWorksAsync(JsonObject artistItem, int page)
     {
-        var id =
-            GetString(artistItem, "id")
+        var id = GetString(artistItem, "id")
             ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://search.kuwo.cn/r.s",
             new QueryCollection
             {
@@ -640,8 +636,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var songs = new JsonArray();
-        foreach (var item in res["musiclist"]?.AsArray() ?? [])
+        JsonArray songs = [];
+        foreach (JsonNode? item in res["musiclist"]?.AsArray() ?? [])
         {
             if (item is not JsonObject song || !MusicListFilter(song))
             {
@@ -670,11 +666,10 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     private async Task<JsonObject> GetArtistAlbumWorksAsync(JsonObject artistItem, int page)
     {
-        var id =
-            GetString(artistItem, "id")
+        var id = GetString(artistItem, "id")
             ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "http://search.kuwo.cn/r.s",
             new QueryCollection
             {
@@ -696,8 +691,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var albums = new JsonArray();
-        foreach (var item in res["albumlist"]?.AsArray() ?? [])
+        JsonArray albums = [];
+        foreach (JsonNode? item in res["albumlist"]?.AsArray() ?? [])
         {
             if (item is not JsonObject album)
             {
@@ -739,7 +734,7 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
         try
         {
-            var node = JsonNode.Parse(text);
+            JsonNode? node = JsonNode.Parse(text);
             if (node is JsonObject jsonObject)
             {
                 return jsonObject;
@@ -764,13 +759,13 @@ public sealed partial class KuwoMusicApiService : IDisposable
         IEnumerable<KeyValuePair<string, string>>? query
     )
     {
-        var headers = new QueryCollection
+        QueryCollection headers = new QueryCollection
         {
             { "User-Agent", ChooseUserAgent() },
             { "Referer", "http://www.kuwo.cn" },
         };
 
-        using var response = await _client.SendAsync(
+        using HttpResponseMessage response = await _client.SendAsync(
             method,
             url,
             query,
@@ -784,8 +779,8 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     private static JsonObject FormatMusicItem(JsonObject source)
     {
-        var musicRid =
-            GetString(source, "MUSICRID")?.Replace("MUSIC_", string.Empty, StringComparison.Ordinal)
+        var musicRid = GetString(source, "MUSICRID")
+            ?.Replace("MUSIC_", string.Empty, StringComparison.Ordinal)
             ?? string.Empty;
 
         return new JsonObject
@@ -860,7 +855,11 @@ public sealed partial class KuwoMusicApiService : IDisposable
 
     private static string? GetString(JsonObject? source, string key)
     {
-        if (source is null || !source.TryGetPropertyValue(key, out var value) || value is null)
+        if (
+            source is null
+            || !source.TryGetPropertyValue(key, out JsonNode? value)
+            || value is null
+        )
         {
             return null;
         }
@@ -892,19 +891,19 @@ public sealed partial class KuwoMusicApiService : IDisposable
             return null;
         }
 
-        var web = PlaylistWebRegex().Match(value);
+        Match web = PlaylistWebRegex().Match(value);
         if (web.Success)
         {
             return web.Groups[1].Value;
         }
 
-        var mobile = PlaylistMobileRegex().Match(value);
+        Match mobile = PlaylistMobileRegex().Match(value);
         if (mobile.Success)
         {
             return mobile.Groups[1].Value;
         }
 
-        var numeric = NumericIdRegex().Match(value);
+        Match numeric = NumericIdRegex().Match(value);
         return numeric.Success ? numeric.Groups[1].Value : null;
     }
 

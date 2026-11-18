@@ -29,7 +29,7 @@ internal static class ExceptionExtensions
         {
             ArgumentNullException.ThrowIfNull(exception);
 
-            var sb = new StringBuilder();
+            StringBuilder sb = new StringBuilder();
             DumpException(exception, sb);
             return sb.ToString();
         }

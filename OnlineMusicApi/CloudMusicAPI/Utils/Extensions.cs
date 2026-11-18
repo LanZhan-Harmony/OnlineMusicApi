@@ -25,6 +25,6 @@ internal static class Extensions
         where TKey : notnull
     {
         public TValue GetValueOrDefault(TKey key, TValue defaultValue) =>
-            dictionary.TryGetValue(key, out var value) ? value : defaultValue;
+            dictionary.TryGetValue(key, out TValue? value) ? value : defaultValue;
     }
 }

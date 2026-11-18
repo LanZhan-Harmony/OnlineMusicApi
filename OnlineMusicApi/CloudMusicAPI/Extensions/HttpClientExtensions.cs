@@ -64,7 +64,7 @@ internal static class HttpClientExtensions
                 throw new ArgumentNullException(nameof(contentType));
             }
 
-            var uriBuilder = new UriBuilder(url);
+            UriBuilder uriBuilder = new UriBuilder(url);
             HttpRequestMessage request;
 
             if (queries is not null)
@@ -96,7 +96,7 @@ internal static class HttpClientExtensions
 
             if (headers is not null)
             {
-                foreach (var header in headers)
+                foreach (KeyValuePair<string, string> header in headers)
                 {
                     request.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }

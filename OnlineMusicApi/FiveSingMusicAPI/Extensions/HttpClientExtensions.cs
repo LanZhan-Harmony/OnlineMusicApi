@@ -41,7 +41,7 @@ internal static class HttpClientExtensions
                 throw new ArgumentNullException(nameof(url));
             }
 
-            var uriBuilder = new UriBuilder(url);
+            UriBuilder uriBuilder = new UriBuilder(url);
             if (queries is not null)
             {
                 var query = queries.ToQueryString();
@@ -58,7 +58,7 @@ internal static class HttpClientExtensions
                 }
             }
 
-            var request = new HttpRequestMessage(method, uriBuilder.Uri);
+            HttpRequestMessage request = new HttpRequestMessage(method, uriBuilder.Uri);
             if (content is not null)
             {
                 request.Content = new ByteArrayContent(content);
@@ -70,7 +70,7 @@ internal static class HttpClientExtensions
 
             if (headers is not null)
             {
-                foreach (var header in headers)
+                foreach (KeyValuePair<string, string> header in headers)
                 {
                     request.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }

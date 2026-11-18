@@ -60,7 +60,7 @@ internal static partial class Request
         ArgumentNullException.ThrowIfNull(data_);
         ArgumentNullException.ThrowIfNull(options);
 
-        var headers = new Dictionary<string, string>(3)
+        Dictionary<string, string> headers = new Dictionary<string, string>(3)
         {
             ["User-Agent"] = ChooseUserAgent(options.UA),
             ["Cookie"] = BuildCookieHeader(options.Cookie),
@@ -76,10 +76,11 @@ internal static partial class Request
             headers["Referer"] = "https://music.163.com";
         }
 
-        var data = data_ is ICollection<KeyValuePair<string, string>> dataCollection
-            ? new Dictionary<string, string>(dataCollection.Count)
+        Dictionary<string, string> data = data_
+            is ICollection<KeyValuePair<string, string>> dataCollection
+            ? [with(dataCollection.Count)]
             : [];
-        foreach (var item in data_)
+        foreach (KeyValuePair<string, string> item in data_)
         {
             data.Add(item.Key, item.Value);
         }
@@ -106,14 +107,14 @@ internal static partial class Request
                 break;
             case "eapi":
             {
-                var cookie = new CookieCollection();
+                CookieCollection cookie = [];
                 foreach (Cookie item in options.Cookie)
                 {
                     cookie.Add(new Cookie(item.Name, item.Value));
                 }
 
                 var csrfToken = cookie["__csrf"]?.Value ?? "";
-                var header = new Dictionary<string, string>(12)
+                Dictionary<string, string> header = new Dictionary<string, string>(12)
                 {
                     { "osver", cookie["osver"]?.Value ?? "" }, // 系统版本
                     { "deviceId", cookie["deviceId"]?.Value ?? "" }, // encrypt.base64.encode(imei + '\t02:00:00:00:00:00\t5106025eb79a5247\t70ffbaac7')
@@ -151,7 +152,7 @@ internal static partial class Request
             }
         }
 
-        var answer = new JsonObject
+        JsonObject answer = new JsonObject
         {
             { "status", 500 },
             { "body", null },
@@ -176,12 +177,17 @@ internal static partial class Request
                 throw new HttpRequestException();
             }
 
-            if (!response.Headers.TryGetValues("set-cookie", out var responseCookies))
+            if (
+                !response.Headers.TryGetValues(
+                    "set-cookie",
+                    out IEnumerable<string>? responseCookies
+                )
+            )
             {
                 responseCookies = [];
             }
 
-            var cookieArray = new JsonArray();
+            JsonArray cookieArray = [];
             foreach (var rawCookie in responseCookies)
             {
                 var cookieValue = CookieDomainRegex().Replace(rawCookie, "");
@@ -197,11 +203,11 @@ internal static partial class Request
                 byte[] buffer;
                 try
                 {
-                    using var stream = new DeflateStream(
+                    using DeflateStream stream = new DeflateStream(
                         await response.Content.ReadAsStreamAsync(),
                         CompressionMode.Decompress
                     );
-                    using var ms = new MemoryStream();
+                    using MemoryStream ms = new MemoryStream();
                     stream.CopyTo(ms);
                     buffer = ms.ToArray();
                 }
@@ -261,7 +267,7 @@ internal static partial class Request
 
     private static string BuildCookieHeader(CookieCollection cookies)
     {
-        var sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
         foreach (Cookie cookie in cookies)
         {
             if (sb.Length > 0)
@@ -279,8 +285,8 @@ internal static partial class Request
 
     private static string BuildCookieHeader(Dictionary<string, string> cookies)
     {
-        var sb = new StringBuilder();
-        foreach (var (key, value) in cookies)
+        StringBuilder sb = new StringBuilder();
+        foreach ((string? key, string? value) in cookies)
         {
             if (sb.Length > 0)
             {

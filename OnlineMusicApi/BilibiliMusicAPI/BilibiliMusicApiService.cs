@@ -87,10 +87,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     public async Task<JsonObject> SearchAlbumAsync(string keyword, int page)
     {
-        var data = await SearchBaseAsync(keyword, page, "video");
-        var result = new JsonArray();
+        JsonObject data = await SearchBaseAsync(keyword, page, "video");
+        JsonArray result = [];
 
-        foreach (var item in data["result"]?.AsArray() ?? [])
+        foreach (JsonNode? item in data["result"]?.AsArray() ?? [])
         {
             if (item is JsonObject source)
             {
@@ -104,10 +104,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     public async Task<JsonObject> SearchArtistAsync(string keyword, int page)
     {
-        var data = await SearchBaseAsync(keyword, page, "bili_user");
-        var result = new JsonArray();
+        JsonObject data = await SearchBaseAsync(keyword, page, "bili_user");
+        JsonArray result = [];
 
-        foreach (var item in data["result"]?.AsArray() ?? [])
+        foreach (JsonNode? item in data["result"]?.AsArray() ?? [])
         {
             if (item is not JsonObject source)
             {
@@ -142,7 +142,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         var cid = GetString(musicItem, "cid");
         if (string.IsNullOrWhiteSpace(cid))
         {
-            var cidRes = await GetCidAsync(
+            JsonObject cidRes = await GetCidAsync(
                 GetString(musicItem, "bvid"),
                 GetString(musicItem, "aid")
             );
@@ -154,7 +154,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             return null;
         }
 
-        var query = new QueryCollection { { "cid", cid }, { "fnval", "16" } };
+        QueryCollection query = new QueryCollection { { "cid", cid }, { "fnval", "16" } };
         var bvid = GetString(musicItem, "bvid");
         var aid = GetString(musicItem, "aid");
         if (!string.IsNullOrWhiteSpace(bvid))
@@ -166,7 +166,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             query.Add("aid", aid);
         }
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "https://api.bilibili.com/x/player/playurl",
             query,
             CommonHeaders
@@ -179,7 +179,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         string? url = null;
         if (data["dash"] is JsonObject dash && dash["audio"] is JsonArray audios)
         {
-            var audioList = audios
+            List<JsonObject> audioList = audios
                 .OfType<JsonObject>()
                 .OrderBy(a => a["bandwidth"]?.GetValue<int>() ?? 0)
                 .ToList();
@@ -195,8 +195,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
                     _ => 1,
                 };
                 index = Math.Min(index, audioList.Count - 1);
-                url =
-                    GetString(audioList[index], "baseUrl")
+                url = GetString(audioList[index], "baseUrl")
                     ?? GetString(audioList[index], "base_url");
             }
         }
@@ -232,15 +231,18 @@ public sealed partial class BilibiliMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(albumItem);
 
-        var cidRes = await GetCidAsync(GetString(albumItem, "bvid"), GetString(albumItem, "aid"));
-        var data = cidRes["data"] as JsonObject;
+        JsonObject cidRes = await GetCidAsync(
+            GetString(albumItem, "bvid"),
+            GetString(albumItem, "aid")
+        );
+        JsonObject? data = cidRes["data"] as JsonObject;
         var cid = GetString(data, "cid");
-        var pages = data?["pages"]?.AsArray();
+        JsonArray? pages = data?["pages"]?.AsArray();
 
-        var musicList = new JsonArray();
+        JsonArray musicList = [];
         if (pages is null || pages.Count <= 1)
         {
-            var copy = CloneObject(albumItem);
+            JsonObject copy = CloneObject(albumItem);
             if (!string.IsNullOrWhiteSpace(cid))
             {
                 copy["cid"] = cid;
@@ -249,14 +251,14 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         }
         else
         {
-            foreach (var page in pages)
+            foreach (JsonNode? page in pages)
             {
                 if (page is not JsonObject p)
                 {
                     continue;
                 }
 
-                var copy = CloneObject(albumItem);
+                JsonObject copy = CloneObject(albumItem);
                 copy["cid"] = GetString(p, "cid");
                 copy["title"] = GetString(p, "part");
                 copy["duration"] = DurationToSec(p["duration"]);
@@ -274,12 +276,11 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         _ = type;
         await EnsureCookieAsync();
 
-        var id =
-            GetString(artistItem, "id")
+        var id = GetString(artistItem, "id")
             ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-        var baseParams = new Dictionary<string, object?>
+        Dictionary<string, object?> baseParams = new Dictionary<string, object?>
         {
             ["mid"] = id,
             ["ps"] = 30,
@@ -299,10 +300,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         };
 
         var wRid = await GetRidAsync(baseParams);
-        var query = ToQueryCollection(baseParams);
+        QueryCollection query = ToQueryCollection(baseParams);
         query.Add("w_rid", wRid);
 
-        var headers = new QueryCollection
+        QueryCollection headers = new QueryCollection
         {
             { "user-agent", CommonHeaders[0].Value },
             { "accept", "*/*" },
@@ -315,15 +316,15 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             { "cookie", $"buvid3={_buvid3};buvid4={_buvid4}" },
         };
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "https://api.bilibili.com/x/space/wbi/arc/search",
             query,
             headers
         );
-        var resultData = res["data"] as JsonObject ?? [];
+        JsonObject resultData = res["data"] as JsonObject ?? [];
 
-        var mapped = new JsonArray();
-        foreach (var item in resultData["list"]?["vlist"]?.AsArray() ?? [])
+        JsonArray mapped = [];
+        foreach (JsonNode? item in resultData["list"]?["vlist"]?.AsArray() ?? [])
         {
             if (item is JsonObject source)
             {
@@ -340,8 +341,8 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     public Task<JsonArray> GetTopListsAsync()
     {
-        var weekly = new JsonObject { ["title"] = "每周必看", ["data"] = new JsonArray() };
-        var precious = new JsonObject
+        JsonObject weekly = new JsonObject { ["title"] = "每周必看", ["data"] = new JsonArray() };
+        JsonObject precious = new JsonObject
         {
             ["title"] = "入站必刷",
             ["data"] = new JsonArray
@@ -356,7 +357,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             },
         };
 
-        var board = new JsonObject
+        JsonObject board = new JsonObject
         {
             ["title"] = "排行榜",
             ["data"] = new JsonArray
@@ -390,21 +391,19 @@ public sealed partial class BilibiliMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(topListItem);
 
-        var id =
-            GetString(topListItem, "id")
+        var id = GetString(topListItem, "id")
             ?? throw new ArgumentException("topListItem.id 不能为空", nameof(topListItem));
 
-        var headers = new QueryCollection();
-        headers.AddRange(CommonHeaders);
+        QueryCollection headers = [.. CommonHeaders];
         headers.Add("referer", "https://www.bilibili.com/");
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             $"https://api.bilibili.com/x/web-interface/{id}",
             null,
             headers
         );
 
-        var musicList = new JsonArray();
-        foreach (var item in res["data"]?["list"]?.AsArray() ?? [])
+        JsonArray musicList = [];
+        foreach (JsonNode? item in res["data"]?["list"]?.AsArray() ?? [])
         {
             if (item is JsonObject source)
             {
@@ -412,7 +411,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             }
         }
 
-        var result = CloneObject(topListItem);
+        JsonObject result = CloneObject(topListItem);
         result["musicList"] = musicList;
         return result;
     }
@@ -425,10 +424,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             return null;
         }
 
-        var medias = await GetFavoriteListAsync(id);
-        var result = new JsonArray();
+        List<JsonObject> medias = await GetFavoriteListAsync(id);
+        JsonArray result = [];
 
-        foreach (var item in medias)
+        foreach (JsonObject item in medias)
         {
             result.Add(
                 new JsonObject
@@ -452,11 +451,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var aid =
-            GetString(musicItem, "aid")
+        var aid = GetString(musicItem, "aid")
             ?? throw new ArgumentException("musicItem.aid 不能为空", nameof(musicItem));
 
-        var parameters = new Dictionary<string, object?>
+        Dictionary<string, object?> parameters = new Dictionary<string, object?>
         {
             ["type"] = 1,
             ["mode"] = 3,
@@ -467,26 +465,30 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         };
         var wRid = await GetRidAsync(parameters);
 
-        var query = ToQueryCollection(parameters);
+        QueryCollection query = ToQueryCollection(parameters);
         query.Add("w_rid", wRid);
 
-        var res = await GetJsonAsync("https://api.bilibili.com/x/v2/reply/wbi/main", query, null);
-        var replies = res["data"]?["replies"]?.AsArray() ?? [];
+        JsonObject res = await GetJsonAsync(
+            "https://api.bilibili.com/x/v2/reply/wbi/main",
+            query,
+            null
+        );
+        JsonArray replies = res["data"]?["replies"]?.AsArray() ?? [];
 
-        var comments = new JsonArray();
-        foreach (var item in replies)
+        JsonArray comments = [];
+        foreach (JsonNode? item in replies)
         {
             if (item is not JsonObject comment)
             {
                 continue;
             }
 
-            var formatted = FormatComment(comment);
-            var nested = comment["replies"]?.AsArray();
+            JsonObject formatted = FormatComment(comment);
+            JsonArray? nested = comment["replies"]?.AsArray();
             if (nested is not null && nested.Count > 0)
             {
-                var sub = new JsonArray();
-                foreach (var child in nested.OfType<JsonObject>())
+                JsonArray sub = [];
+                foreach (JsonObject child in nested.OfType<JsonObject>())
                 {
                     sub.Add(FormatComment(child));
                 }
@@ -501,7 +503,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private async Task<JsonObject> GetCidAsync(string? bvid, string? aid)
     {
-        var query = new QueryCollection();
+        QueryCollection query = [];
         if (!string.IsNullOrWhiteSpace(bvid))
         {
             query.Add("bvid", bvid);
@@ -522,7 +524,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
     {
         await EnsureCookieAsync();
 
-        var query = new QueryCollection
+        QueryCollection query = new QueryCollection
         {
             { "context", string.Empty },
             { "page", page.ToString(CultureInfo.InvariantCulture) },
@@ -542,11 +544,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             { "dynamic_offset", "0" },
         };
 
-        var headers = new QueryCollection();
-        headers.AddRange(SearchHeaders);
+        QueryCollection headers = [.. SearchHeaders];
         headers.Add("cookie", $"buvid3={_buvid3};buvid4={_buvid4}");
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "https://api.bilibili.com/x/web-interface/search/type",
             query,
             headers
@@ -561,7 +562,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             return;
         }
 
-        var headers = new QueryCollection
+        QueryCollection headers = new QueryCollection
         {
             {
                 "User-Agent",
@@ -569,12 +570,12 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             },
         };
 
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "https://api.bilibili.com/x/frontend/finger/spi",
             null,
             headers
         );
-        var data = res["data"] as JsonObject;
+        JsonObject? data = res["data"] as JsonObject;
         _buvid3 = GetString(data, "b_3");
         _buvid4 = GetString(data, "b_4");
     }
@@ -590,8 +591,8 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             return (_imgKey, _subKey);
         }
 
-        var data = await GetBiliTicketAsync();
-        var nav = data["nav"] as JsonObject ?? [];
+        JsonObject data = await GetBiliTicketAsync();
+        JsonObject nav = data["nav"] as JsonObject ?? [];
 
         _imgKey = Path.GetFileNameWithoutExtension(GetString(nav, "img") ?? string.Empty);
         _subKey = Path.GetFileNameWithoutExtension(GetString(nav, "sub") ?? string.Empty);
@@ -605,7 +606,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var hexSign = HmacSha256Hex("XgwSnGZ1p", $"ts{ts}");
 
-        var query = new QueryCollection
+        QueryCollection query = new QueryCollection
         {
             { "key_id", "ec02" },
             { "hexsign", hexSign },
@@ -613,7 +614,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             { "csrf", string.Empty },
         };
 
-        var headers = new QueryCollection
+        QueryCollection headers = new QueryCollection
         {
             {
                 "User-Agent",
@@ -621,7 +622,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             },
         };
 
-        var res = await SendForJsonAsync(
+        JsonObject res = await SendForJsonAsync(
             HttpMethod.Post,
             "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket",
             query,
@@ -633,10 +634,10 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private async Task<string> GetRidAsync(Dictionary<string, object?> parameters)
     {
-        var (img, sub) = await GetWbiKeysAsync();
+        (string? img, string? sub) = await GetWbiKeysAsync();
         var mixin = GetMixinKey(img + sub);
 
-        var pairs = new List<string>();
+        List<string> pairs = [];
         foreach (var key in parameters.Keys.OrderBy(x => x, StringComparer.Ordinal))
         {
             var value = parameters[key];
@@ -656,14 +657,14 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private async Task<List<JsonObject>> GetFavoriteListAsync(string id)
     {
-        var result = new List<JsonObject>();
+        List<JsonObject> result = [];
         var page = 1;
 
         while (true)
         {
             try
             {
-                var query = new QueryCollection
+                QueryCollection query = new QueryCollection
                 {
                     { "media_id", id },
                     { "platform", "web" },
@@ -671,14 +672,14 @@ public sealed partial class BilibiliMusicApiService : IDisposable
                     { "pn", page.ToString(CultureInfo.InvariantCulture) },
                 };
 
-                var res = await GetJsonAsync(
+                JsonObject res = await GetJsonAsync(
                     "https://api.bilibili.com/x/v3/fav/resource/list",
                     query,
                     null
                 );
-                var data = res["data"] as JsonObject;
-                var medias = data?["medias"]?.AsArray() ?? [];
-                foreach (var media in medias.OfType<JsonObject>())
+                JsonObject? data = res["data"] as JsonObject;
+                JsonArray medias = data?["medias"]?.AsArray() ?? [];
+                foreach (JsonObject media in medias.OfType<JsonObject>())
                 {
                     result.Add(media);
                 }
@@ -706,7 +707,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         JsonObject board
     )
     {
-        var weeklyRes = await GetJsonAsync(
+        JsonObject weeklyRes = await GetJsonAsync(
             "https://api.bilibili.com/x/web-interface/popular/series/list",
             null,
             new QueryCollection
@@ -718,8 +719,8 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             }
         );
 
-        var weeklyData = weekly["data"]?.AsArray() ?? [];
-        foreach (var item in weeklyRes["data"]?["list"]?.AsArray().Take(8) ?? [])
+        JsonArray weeklyData = weekly["data"]?.AsArray() ?? [];
+        foreach (JsonNode? item in weeklyRes["data"]?["list"]?.AsArray().Take(8) ?? [])
         {
             if (item is not JsonObject w)
             {
@@ -763,7 +764,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         string? content
     )
     {
-        using var response = await _client.SendAsync(
+        using HttpResponseMessage response = await _client.SendAsync(
             method,
             url,
             query,
@@ -814,14 +815,15 @@ public sealed partial class BilibiliMusicApiService : IDisposable
         var title = WebUtility.HtmlDecode(EmTagRegex().Replace(rawTitle, string.Empty));
         var pic = GetString(source, "pic");
 
-        var result = new JsonObject
+        JsonObject result = new JsonObject
         {
-            ["id"] =
-                GetString(source, "cid") ?? GetString(source, "bvid") ?? GetString(source, "aid"),
+            ["id"] = GetString(source, "cid")
+                ?? GetString(source, "bvid")
+                ?? GetString(source, "aid"),
             ["aid"] = GetString(source, "aid"),
             ["bvid"] = GetString(source, "bvid"),
-            ["artist"] =
-                GetString(source, "author") ?? GetString(source["owner"] as JsonObject, "name"),
+            ["artist"] = GetString(source, "author")
+                ?? GetString(source["owner"] as JsonObject, "name"),
             ["title"] = title,
             ["alias"] = AliasRegex().Match(title) is { Success: true } m ? m.Groups[1].Value : null,
             ["album"] = GetString(source, "bvid") ?? GetString(source, "aid"),
@@ -867,8 +869,8 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private static QueryCollection ToQueryCollection(Dictionary<string, object?> source)
     {
-        var query = new QueryCollection(source.Count);
-        foreach (var (key, value) in source)
+        QueryCollection query = [with(source.Count)];
+        foreach ((string? key, object? value) in source)
         {
             if (value is null)
             {
@@ -883,8 +885,8 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private static JsonObject CloneObject(JsonObject source)
     {
-        var clone = new JsonObject();
-        foreach (var (key, value) in source)
+        JsonObject clone = [];
+        foreach ((string? key, JsonNode? value) in source)
         {
             clone[key] = value?.DeepClone();
         }
@@ -962,7 +964,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             52,
         };
 
-        var sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
         foreach (var i in map)
         {
             if (i < text.Length)
@@ -976,7 +978,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private static string HmacSha256Hex(string key, string message)
     {
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
+        using HMACSHA256 hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
         var bytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
@@ -994,7 +996,7 @@ public sealed partial class BilibiliMusicApiService : IDisposable
             return null;
         }
 
-        var m = NumericIdRegex().Match(urlLike);
+        Match m = NumericIdRegex().Match(urlLike);
         if (m.Success)
         {
             return m.Groups[1].Value;
@@ -1018,7 +1020,11 @@ public sealed partial class BilibiliMusicApiService : IDisposable
 
     private static string? GetString(JsonObject? source, string key)
     {
-        if (source is null || !source.TryGetPropertyValue(key, out var value) || value is null)
+        if (
+            source is null
+            || !source.TryGetPropertyValue(key, out JsonNode? value)
+            || value is null
+        )
         {
             return null;
         }

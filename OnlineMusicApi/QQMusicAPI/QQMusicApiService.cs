@@ -98,7 +98,7 @@ public sealed partial class QQMusicApiService : IDisposable
         };
 
         // 与 qq.ts 保持一致：先走不带 filename 的 CgiGetVkey，请求可播放链接。
-        var vKey = await GetPlayableSourceUrlAsync(songMid);
+        JsonObject? vKey = await GetPlayableSourceUrlAsync(songMid);
         var sip = vKey?["req_0"]?["data"]?["sip"]?.AsArray().FirstOrDefault()?.ToString();
         var purl = vKey
             ?["req_0"]?["data"]?["midurlinfo"]?.AsArray()
@@ -108,7 +108,7 @@ public sealed partial class QQMusicApiService : IDisposable
         // 若仍无 purl，再回退到按质量拼接 filename 的旧逻辑。
         if (string.IsNullOrEmpty(purl))
         {
-            var qualityVKey = await GetSourceUrlAsync(songMid, mediaType);
+            JsonObject? qualityVKey = await GetSourceUrlAsync(songMid, mediaType);
             sip = qualityVKey?["req_0"]?["data"]?["sip"]?.AsArray().FirstOrDefault()?.ToString();
             purl = qualityVKey
                 ?["req_0"]?["data"]?["midurlinfo"]?.AsArray()
@@ -134,7 +134,7 @@ public sealed partial class QQMusicApiService : IDisposable
             throw new ArgumentException("albumMID 不能为空", nameof(albumItem));
         }
 
-        var payload = new JsonObject
+        JsonObject payload = new JsonObject
         {
             ["comm"] = new JsonObject { ["ct"] = 24, ["cv"] = 10000 },
             ["albumSonglist"] = new JsonObject
@@ -156,10 +156,10 @@ public sealed partial class QQMusicApiService : IDisposable
             new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
             "https://u.y.qq.com/cgi-bin/musicu.fcg?g_tk=5381&format=json&inCharset=utf8&outCharset=utf-8"
         );
-        var res = await GetJsonAsync(url);
+        JsonObject res = await GetJsonAsync(url);
 
-        var musicList = new JsonArray();
-        foreach (var item in res["albumSonglist"]?["data"]?["songList"]?.AsArray() ?? [])
+        JsonArray musicList = [];
+        foreach (JsonNode? item in res["albumSonglist"]?["data"]?["songList"]?.AsArray() ?? [])
         {
             if (item is JsonObject entry && entry["songInfo"] is JsonObject song)
             {
@@ -190,12 +190,12 @@ public sealed partial class QQMusicApiService : IDisposable
 
         var url =
             $"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={Uri.EscapeDataString(songMid)}&pcachetime={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
-        var res = await GetJsonpAsync(url);
+        JsonObject res = await GetJsonpAsync(url);
 
         var lyric = DecodeLyricBase64(GetString(res, "lyric"));
         var trans = DecodeLyricBase64(GetString(res, "trans"));
 
-        var result = new JsonObject { ["rawLrc"] = lyric ?? string.Empty };
+        JsonObject result = new JsonObject { ["rawLrc"] = lyric ?? string.Empty };
         if (!string.IsNullOrEmpty(trans))
         {
             result["translation"] = trans;
@@ -214,11 +214,12 @@ public sealed partial class QQMusicApiService : IDisposable
 
         var url =
             $"https://i.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&utf8=1&disstid={Uri.EscapeDataString(id)}&loginUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
-        var res = await GetJsonpAsync(url, referer: "https://y.qq.com/n/yqq/playlist");
+        JsonObject res = await GetJsonpAsync(url, referer: "https://y.qq.com/n/yqq/playlist");
 
-        var list = new JsonArray();
+        JsonArray list = [];
         foreach (
-            var item in res["cdlist"]?.AsArray().FirstOrDefault()?["songlist"]?.AsArray() ?? []
+            JsonNode? item in res["cdlist"]?.AsArray().FirstOrDefault()?["songlist"]?.AsArray()
+                ?? []
         )
         {
             if (item is JsonObject song)
@@ -234,18 +235,18 @@ public sealed partial class QQMusicApiService : IDisposable
     {
         const string url =
             "https://u.y.qq.com/cgi-bin/musicu.fcg?_=1577086820633&data=%7B%22comm%22%3A%7B%22g_tk%22%3A5381%2C%22uin%22%3A123456%2C%22format%22%3A%22json%22%2C%22inCharset%22%3A%22utf-8%22%2C%22outCharset%22%3A%22utf-8%22%2C%22notice%22%3A0%2C%22platform%22%3A%22h5%22%2C%22needNewCode%22%3A1%2C%22ct%22%3A23%2C%22cv%22%3A0%7D%2C%22topList%22%3A%7B%22module%22%3A%22musicToplist.ToplistInfoServer%22%2C%22method%22%3A%22GetAll%22%2C%22param%22%3A%7B%7D%7D%7D";
-        var res = await GetJsonAsync(url);
+        JsonObject res = await GetJsonAsync(url);
 
-        var groups = new JsonArray();
-        foreach (var item in res["topList"]?["data"]?["group"]?.AsArray() ?? [])
+        JsonArray groups = [];
+        foreach (JsonNode? item in res["topList"]?["data"]?["group"]?.AsArray() ?? [])
         {
             if (item is not JsonObject group)
             {
                 continue;
             }
 
-            var topListItems = new JsonArray();
-            foreach (var top in group["toplist"]?.AsArray() ?? [])
+            JsonArray topListItems = [];
+            foreach (JsonNode? top in group["toplist"]?.AsArray() ?? [])
             {
                 if (top is not JsonObject topObject)
                 {
@@ -259,8 +260,7 @@ public sealed partial class QQMusicApiService : IDisposable
                         ["description"] = GetString(topObject, "intro"),
                         ["title"] = GetString(topObject, "title"),
                         ["period"] = GetString(topObject, "period"),
-                        ["coverImg"] =
-                            GetString(topObject, "headPicUrl")
+                        ["coverImg"] = GetString(topObject, "headPicUrl")
                             ?? GetString(topObject, "frontPicUrl"),
                     }
                 );
@@ -289,7 +289,7 @@ public sealed partial class QQMusicApiService : IDisposable
         }
 
         var period = GetString(topListItem, "period") ?? string.Empty;
-        var dataObject = new JsonObject
+        JsonObject dataObject = new JsonObject
         {
             ["detail"] = new JsonObject
             {
@@ -308,10 +308,10 @@ public sealed partial class QQMusicApiService : IDisposable
 
         var url =
             $"https://u.y.qq.com/cgi-bin/musicu.fcg?g_tk=5381&data={Uri.EscapeDataString(dataObject.ToJsonString())}";
-        var res = await GetJsonAsync(url);
+        JsonObject res = await GetJsonAsync(url);
 
-        var musicList = new JsonArray();
-        foreach (var item in res["detail"]?["data"]?["songInfoList"]?.AsArray() ?? [])
+        JsonArray musicList = [];
+        foreach (JsonNode? item in res["detail"]?["data"]?["songInfoList"]?.AsArray() ?? [])
         {
             if (item is JsonObject song)
             {
@@ -319,29 +319,29 @@ public sealed partial class QQMusicApiService : IDisposable
             }
         }
 
-        var result = new JsonObject(topListItem) { ["musicList"] = musicList };
+        JsonObject result = new JsonObject(topListItem) { ["musicList"] = musicList };
         return result;
     }
 
     public async Task<JsonObject> GetRecommendSheetTagsAsync()
     {
-        var res = await GetJsonAsync(
+        JsonObject res = await GetJsonAsync(
             "https://c.y.qq.com/splcloud/fcgi-bin/fcg_get_diss_tag_conf.fcg?format=json&inCharset=utf8&outCharset=utf-8"
         );
 
-        var categories = res["data"]?["categories"]?.AsArray() ?? [];
-        var data = new JsonArray();
-        var pinned = new JsonArray();
+        JsonArray categories = res["data"]?["categories"]?.AsArray() ?? [];
+        JsonArray data = [];
+        JsonArray pinned = [];
 
-        foreach (var category in categories.Skip(1))
+        foreach (JsonNode? category in categories.Skip(1))
         {
             if (category is not JsonObject categoryObject)
             {
                 continue;
             }
 
-            var tags = new JsonArray();
-            foreach (var item in categoryObject["items"]?.AsArray() ?? [])
+            JsonArray tags = [];
+            foreach (JsonNode? item in categoryObject["items"]?.AsArray() ?? [])
             {
                 if (item is not JsonObject tag)
                 {
@@ -377,7 +377,7 @@ public sealed partial class QQMusicApiService : IDisposable
     public async Task<JsonObject> GetRecommendSheetsByTagAsync(string? tagId, int page)
     {
         var pageSize = 20;
-        var query = new QueryCollection
+        QueryCollection query = new QueryCollection
         {
             { "inCharset", "utf8" },
             { "outCharset", "utf-8" },
@@ -393,12 +393,12 @@ public sealed partial class QQMusicApiService : IDisposable
             query,
             referer: "https://y.qq.com"
         );
-        var res = ParseJsonp(raw)?["data"] as JsonObject ?? [];
+        JsonObject res = ParseJsonp(raw)?["data"] as JsonObject ?? [];
 
         var sum = res["sum"]?.GetValue<int>() ?? 0;
         var isEnd = sum <= page * pageSize;
-        var data = new JsonArray();
-        foreach (var item in res["list"]?.AsArray() ?? [])
+        JsonArray data = [];
+        foreach (JsonNode? item in res["list"]?.AsArray() ?? [])
         {
             if (item is not JsonObject sheet)
             {
@@ -427,18 +427,18 @@ public sealed partial class QQMusicApiService : IDisposable
         ArgumentNullException.ThrowIfNull(sheet);
 
         var id = GetString(sheet, "id") ?? string.Empty;
-        var data = await ImportMusicSheetAsync(id) ?? [];
+        JsonArray data = await ImportMusicSheetAsync(id) ?? [];
 
         return new JsonObject { ["isEnd"] = true, ["musicList"] = data };
     }
 
     private async Task<JsonObject> SearchAsync(string query, int page, int searchType)
     {
-        var baseResult = await SearchBaseAsync(query, page, searchType);
-        var data = baseResult["data"] as JsonArray ?? [];
-        var mapped = new JsonArray();
+        JsonObject baseResult = await SearchBaseAsync(query, page, searchType);
+        JsonArray data = baseResult["data"] as JsonArray ?? [];
+        JsonArray mapped = [];
 
-        foreach (var item in data)
+        foreach (JsonNode? item in data)
         {
             if (item is not JsonObject source)
             {
@@ -467,7 +467,7 @@ public sealed partial class QQMusicApiService : IDisposable
 
     private async Task<JsonObject> SearchBaseAsync(string query, int page, int searchType)
     {
-        var payload = new JsonObject
+        JsonObject payload = new JsonObject
         {
             ["req_1"] = new JsonObject
             {
@@ -483,18 +483,18 @@ public sealed partial class QQMusicApiService : IDisposable
             },
         };
 
-        var res = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload);
+        JsonObject res = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload);
 
         var sum = res["req_1"]?["data"]?["meta"]?["sum"]?.GetValue<int>() ?? 0;
         var listName = SearchTypeMap.GetValueOrDefault(searchType, "song");
-        var list = res["req_1"]?["data"]?["body"]?[listName]?["list"]?.AsArray() ?? [];
+        JsonArray list = res["req_1"]?["data"]?["body"]?[listName]?["list"]?.AsArray() ?? [];
 
         return new JsonObject { ["isEnd"] = sum <= page * PageSize, ["data"] = list.DeepClone() };
     }
 
     private async Task<JsonObject?> GetSourceUrlAsync(string id, string type)
     {
-        if (!MediaTypeMap.TryGetValue(type, out var typeObj))
+        if (!MediaTypeMap.TryGetValue(type, out (string Prefix, string Extension) typeObj))
         {
             typeObj = MediaTypeMap["128"];
         }
@@ -502,7 +502,7 @@ public sealed partial class QQMusicApiService : IDisposable
         var guid = Random.Shared.Next(1, 10_000_000).ToString(CultureInfo.InvariantCulture);
         var filename = $"{typeObj.Prefix}{id}{typeObj.Extension}";
 
-        var payload = new JsonObject
+        JsonObject payload = new JsonObject
         {
             ["req_0"] = new JsonObject
             {
@@ -552,7 +552,7 @@ public sealed partial class QQMusicApiService : IDisposable
 
     private async Task<JsonObject?> GetPlayableSourceUrlAsync(string songMid)
     {
-        var payload = new JsonObject
+        JsonObject payload = new JsonObject
         {
             ["req_0"] = new JsonObject
             {
@@ -592,7 +592,7 @@ public sealed partial class QQMusicApiService : IDisposable
             throw new ArgumentException("singerMID 不能为空", nameof(artistItem));
         }
 
-        var payload = new JsonObject
+        JsonObject payload = new JsonObject
         {
             ["comm"] = new JsonObject { ["ct"] = 24, ["cv"] = 0 },
             ["singer"] = new JsonObject
@@ -613,10 +613,10 @@ public sealed partial class QQMusicApiService : IDisposable
             new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
             "https://u.y.qq.com/cgi-bin/musicu.fcg"
         );
-        var res = await GetJsonAsync(url);
+        JsonObject res = await GetJsonAsync(url);
 
-        var songs = new JsonArray();
-        foreach (var item in res["singer"]?["data"]?["songlist"]?.AsArray() ?? [])
+        JsonArray songs = [];
+        foreach (JsonNode? item in res["singer"]?["data"]?["songlist"]?.AsArray() ?? [])
         {
             if (item is JsonObject song)
             {
@@ -636,7 +636,7 @@ public sealed partial class QQMusicApiService : IDisposable
             throw new ArgumentException("singerMID 不能为空", nameof(artistItem));
         }
 
-        var payload = new JsonObject
+        JsonObject payload = new JsonObject
         {
             ["comm"] = new JsonObject { ["ct"] = 24, ["cv"] = 0 },
             ["singerAlbum"] = new JsonObject
@@ -658,10 +658,10 @@ public sealed partial class QQMusicApiService : IDisposable
             new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
             "https://u.y.qq.com/cgi-bin/musicu.fcg"
         );
-        var res = await GetJsonAsync(url);
+        JsonObject res = await GetJsonAsync(url);
 
-        var albums = new JsonArray();
-        foreach (var item in res["singerAlbum"]?["data"]?["list"]?.AsArray() ?? [])
+        JsonArray albums = [];
+        foreach (JsonNode? item in res["singerAlbum"]?["data"]?["list"]?.AsArray() ?? [])
         {
             if (item is JsonObject album)
             {
@@ -711,13 +711,13 @@ public sealed partial class QQMusicApiService : IDisposable
         string? referer = null
     )
     {
-        var headers = new QueryCollection { { "User-Agent", ChooseUserAgent() } };
+        QueryCollection headers = new QueryCollection { { "User-Agent", ChooseUserAgent() } };
         if (!string.IsNullOrEmpty(referer))
         {
             headers.Add("Referer", referer);
         }
 
-        using var response = await _client.SendAsync(
+        using HttpResponseMessage response = await _client.SendAsync(
             method,
             url,
             query,
@@ -742,12 +742,12 @@ public sealed partial class QQMusicApiService : IDisposable
 
     private static JsonObject FormatMusicItem(JsonObject source)
     {
-        var albumObject = source["album"] as JsonObject;
+        JsonObject? albumObject = source["album"] as JsonObject;
         var albumId = GetString(source, "albumid") ?? GetString(albumObject, "id");
         var albumMid = GetString(source, "albummid") ?? GetString(albumObject, "mid");
         var albumName = GetString(source, "albumname") ?? GetString(albumObject, "title");
 
-        var singers = source["singer"]?.AsArray() ?? [];
+        JsonArray singers = source["singer"]?.AsArray() ?? [];
         var singerNames = string.Join(
             ", ",
             singers
@@ -781,8 +781,7 @@ public sealed partial class QQMusicApiService : IDisposable
             ["id"] = GetString(source, "albumID") ?? GetString(source, "albumid"),
             ["albumMID"] = albumMid,
             ["title"] = GetString(source, "albumName") ?? GetString(source, "album_name"),
-            ["artwork"] =
-                GetString(source, "albumPic")
+            ["artwork"] = GetString(source, "albumPic")
                 ?? (
                     string.IsNullOrEmpty(albumMid)
                         ? null
@@ -821,14 +820,18 @@ public sealed partial class QQMusicApiService : IDisposable
 
     private static JsonObject FormatLyricItem(JsonObject source)
     {
-        var music = FormatMusicItem(source);
+        JsonObject music = FormatMusicItem(source);
         music["rawLrcTxt"] = GetString(source, "content");
         return music;
     }
 
     private static string? GetString(JsonObject? source, string key)
     {
-        if (source is null || !source.TryGetPropertyValue(key, out var value) || value is null)
+        if (
+            source is null
+            || !source.TryGetPropertyValue(key, out JsonNode? value)
+            || value is null
+        )
         {
             return null;
         }
@@ -852,7 +855,7 @@ public sealed partial class QQMusicApiService : IDisposable
     {
         var index = baseUrl.IndexOf('?', StringComparison.Ordinal);
         var url = index == -1 ? baseUrl : baseUrl[..index];
-        var currentQuery = new Dictionary<string, string>(StringComparer.Ordinal);
+        Dictionary<string, string> currentQuery = [with(StringComparer.Ordinal)];
 
         if (index != -1)
         {
@@ -866,13 +869,13 @@ public sealed partial class QQMusicApiService : IDisposable
             }
         }
 
-        foreach (var (key, value) in query)
+        foreach ((string? key, string? value) in query)
         {
             currentQuery[key] = value;
         }
 
-        var builder = new StringBuilder();
-        foreach (var (key, value) in currentQuery)
+        StringBuilder builder = new StringBuilder();
+        foreach ((string? key, string? value) in currentQuery)
         {
             if (string.IsNullOrEmpty(value))
             {
@@ -914,19 +917,19 @@ public sealed partial class QQMusicApiService : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(urlLike);
 
-        var shareMatch = MusicSheetShareUrlRegex().Match(urlLike);
+        Match shareMatch = MusicSheetShareUrlRegex().Match(urlLike);
         if (shareMatch.Success)
         {
             return shareMatch.Groups[1].Value;
         }
 
-        var webMatch = MusicSheetWebUrlRegex().Match(urlLike);
+        Match webMatch = MusicSheetWebUrlRegex().Match(urlLike);
         if (webMatch.Success)
         {
             return webMatch.Groups[1].Value;
         }
 
-        var numericMatch = NumericIdRegex().Match(urlLike);
+        Match numericMatch = NumericIdRegex().Match(urlLike);
         return numericMatch.Success ? numericMatch.Groups[1].Value : null;
     }
 

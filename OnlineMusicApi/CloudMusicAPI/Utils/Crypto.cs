@@ -72,7 +72,7 @@ internal static class Crypto
 
     private static byte[] AesEncrypt(byte[] buffer, CipherMode mode, byte[] key, byte[]? iv)
     {
-        using var aes = Aes.Create();
+        using Aes aes = Aes.Create();
         aes.Key = key;
         return mode switch
         {
@@ -84,7 +84,7 @@ internal static class Crypto
 
     private static byte[] AesDecrypt(byte[] buffer, CipherMode mode, byte[] key, byte[]? iv)
     {
-        using var aes = Aes.Create();
+        using Aes aes = Aes.Create();
         aes.Key = key;
         return mode switch
         {
@@ -98,12 +98,12 @@ internal static class Crypto
     {
         if (_cachedPublicKey is null)
         {
-            using var rsa = RSA.Create();
+            using RSA rsa = RSA.Create();
             rsa.ImportFromPem(publicKey);
             _cachedPublicKey = rsa.ExportParameters(false);
         }
 
-        var rsaParameters = _cachedPublicKey.Value;
+        RSAParameters rsaParameters = _cachedPublicKey.Value;
         return BigInteger
             .ModPow(
                 new BigInteger(buffer, true, true),

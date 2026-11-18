@@ -52,8 +52,8 @@ public sealed class CloudMusicApiProvider
             return _emptyData;
         }
 
-        var data = new QueryCollection(_parameterInfos.Length);
-        foreach (var parameterInfo in _parameterInfos)
+        QueryCollection data = [with(_parameterInfos.Length)];
+        foreach (ParameterInfo parameterInfo in _parameterInfos)
         {
             switch (parameterInfo.Type)
             {
@@ -250,10 +250,10 @@ public static class CloudMusicApiProviders
     {
         ArgumentNullException.ThrowIfNull(crypto);
 
-        var cookieCollection = new CookieCollection();
+        CookieCollection cookieCollection = [];
         if (cookies is not null)
         {
-            foreach (var cookie in cookies)
+            foreach (Cookie cookie in cookies)
             {
                 cookieCollection.Add(cookie);
             }
