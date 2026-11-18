@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using System.Text.Json.Serialization;
 using OnlineMusicApi.Internal.Contracts.CloudMusic;
 
 namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol;

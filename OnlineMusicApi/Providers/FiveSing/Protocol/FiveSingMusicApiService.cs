@@ -1,11 +1,10 @@
-﻿using System.Globalization;
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using OnlineMusicApi.Internal.Providers.FiveSing.Protocol.Extensions;
-
 namespace OnlineMusicApi.Internal.Providers.FiveSing.Protocol;
 
 /// <summary>
@@ -46,13 +45,14 @@ internal sealed partial class FiveSingMusicApiService : IDisposable
 
     public Task<JsonObject> SearchArtistAsync(string query, int page) =>
         SearchAsync(query, page, 2, 1);
-public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
+
+    public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var id = GetString(musicItem, "id")
+        string id = GetString(musicItem, "id")
             ?? throw new ArgumentException("musicItem.id 不能为空", nameof(musicItem));
-        var typeEname = GetString(musicItem, "typeEname")
+        string typeEname = GetString(musicItem, "typeEname")
             ?? throw new ArgumentException("musicItem.typeEname 不能为空", nameof(musicItem));
 
         JsonObject res = await GetJsonAsync(
@@ -68,7 +68,7 @@ public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
     {
         ArgumentNullException.ThrowIfNull(albumItem);
 
-        var id = GetString(albumItem, "id")
+        string id = GetString(albumItem, "id")
             ?? throw new ArgumentException("albumItem.id 不能为空", nameof(albumItem));
 
         JsonObject res = await GetJsonAsync(
@@ -101,12 +101,13 @@ public async Task<JsonObject> GetLyricAsync(JsonObject musicItem)
 
         return new JsonObject { ["musicList"] = musicList };
     }
-public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string quality)
+
+    public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string quality)
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var songId = GetString(musicItem, "id");
-        var songType = GetString(musicItem, "typeEname");
+        string? songId = GetString(musicItem, "id");
+        string? songType = GetString(musicItem, "typeEname");
         if (string.IsNullOrWhiteSpace(songId) || string.IsNullOrWhiteSpace(songType))
         {
             return null;
@@ -118,7 +119,7 @@ public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string 
             return null;
         }
 
-        var url = quality switch
+        string? url = quality switch
         {
             "low" => GetString(data, "lqurl") ?? GetString(data, "lqurl_backup"),
             "standard" => GetString(data, "squrl") ?? GetString(data, "squrl_backup"),
@@ -237,18 +238,19 @@ public async Task<JsonObject?> GetMediaSourceAsync(JsonObject musicItem, string 
             );
         }
 
-        var cur = res["pageInfo"]?["cur"]?.GetValue<int>() ?? 0;
-        var totalPages = res["pageInfo"]?["totalPages"]?.GetValue<int>() ?? 0;
+        int cur = res["pageInfo"]?["cur"]?.GetValue<int>() ?? 0;
+        int totalPages = res["pageInfo"]?["totalPages"]?.GetValue<int>() ?? 0;
 
         return new JsonObject { ["isEnd"] = cur >= totalPages, ["data"] = data };
     }
-private async Task<JsonObject> GetJsonAsync(
+
+    private async Task<JsonObject> GetJsonAsync(
         string url,
         IEnumerable<KeyValuePair<string, string>>? query,
         IEnumerable<KeyValuePair<string, string>>? headers
     )
     {
-        var text = await GetStringAsync(url, query, headers);
+        string text = await GetStringAsync(url, query, headers);
         return JsonNode.Parse(text)?.AsObject() ?? [];
     }
 
@@ -372,19 +374,20 @@ private async Task<JsonObject> GetJsonAsync(
 
         return value switch
         {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out var intValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
+            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
                 intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out var longValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
                 longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out var doubleValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
                 doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out var boolValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
                 boolValue.ToString(),
             _ => value.ToJsonString(),
         };
     }
-public void Dispose()
+
+    public void Dispose()
     {
         if (_ownsClient)
         {

@@ -9,9 +9,7 @@ internal static class FiveSingSongMapper
 
     public static SongId SongIdOf(string id, string? typeEname)
     {
-        string value = string.IsNullOrWhiteSpace(typeEname)
-            ? id
-            : $"{id}{IdSeparator}{typeEname}";
+        string value = string.IsNullOrWhiteSpace(typeEname) ? id : $"{id}{IdSeparator}{typeEname}";
 
         return new SongId(MusicSource.FiveSing, value);
     }
@@ -23,9 +21,7 @@ internal static class FiveSingSongMapper
     public static (string Id, string? TypeEname) ParseSongId(string value)
     {
         int index = value.IndexOf(IdSeparator, StringComparison.Ordinal);
-        return index < 0
-            ? (value, null)
-            : (value[..index], value[(index + 1)..]);
+        return index < 0 ? (value, null) : (value[..index], value[(index + 1)..]);
     }
 
     public static Song? FromSong(FiveSingSongDto dto)
@@ -43,7 +39,14 @@ internal static class FiveSingSongMapper
             Title = dto.Title ?? string.Empty,
             Artists = string.IsNullOrWhiteSpace(dto.Artist)
                 ? []
-                : [new ArtistRef { Id = ArtistIdOf(dto.SingerId ?? string.Empty), Name = dto.Artist }],
+                :
+                [
+                    new ArtistRef
+                    {
+                        Id = ArtistIdOf(dto.SingerId ?? string.Empty),
+                        Name = dto.Artist,
+                    },
+                ],
         };
     }
 
@@ -80,7 +83,10 @@ internal static class FiveSingSongMapper
 
     public static MediaSource? FromMedia(FiveSingMediaDto? dto, AudioQuality requested)
     {
-        if (dto?.Url is not { Length: > 0 } url || !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+        if (
+            dto?.Url is not { Length: > 0 } url
+            || !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+        )
         {
             return null;
         }
@@ -101,17 +107,25 @@ internal static class FiveSingSongMapper
             return new Lyric { Id = id, Format = LyricFormat.Unknown };
         }
 
-        return new Lyric { Id = id, Format = LyricFormat.Lrc, Text = text };
+        return new Lyric
+        {
+            Id = id,
+            Format = LyricFormat.Lrc,
+            Text = text,
+        };
     }
 
     private static int? ParseYear(string? value)
     {
-        if (value is { Length: >= 4 }
+        if (
+            value is { Length: >= 4 }
             && int.TryParse(
                 value.AsSpan(0, 4),
                 System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture,
-                out int year))
+                out int year
+            )
+        )
         {
             return year;
         }

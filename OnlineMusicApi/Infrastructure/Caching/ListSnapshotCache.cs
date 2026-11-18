@@ -34,7 +34,7 @@ internal sealed class ListSnapshotCache
 
         lock (_lock)
         {
-            if (!_entries.TryGetValue(key, out SnapshotEntry entry))
+            if (!_entries.TryGetValue(key, out SnapshotEntry? entry) || entry is null)
             {
                 return false;
             }
@@ -62,7 +62,7 @@ internal sealed class ListSnapshotCache
 
         lock (_lock)
         {
-            if (_entries.Remove(key, out SnapshotEntry old))
+            if (_entries.Remove(key, out SnapshotEntry? old) && old is not null)
             {
                 _totalSongs -= old.Count;
             }
@@ -90,7 +90,7 @@ internal sealed class ListSnapshotCache
     {
         lock (_lock)
         {
-            if (_entries.Remove(key, out SnapshotEntry entry))
+            if (_entries.Remove(key, out SnapshotEntry? entry) && entry is not null)
             {
                 _totalSongs -= entry.Count;
             }

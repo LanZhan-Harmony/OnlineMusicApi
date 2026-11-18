@@ -1,11 +1,11 @@
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Extensions;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Extensions;
-
 namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;
 
 internal static partial class Request
@@ -113,7 +113,7 @@ internal static partial class Request
                     cookie.Add(new Cookie(item.Name, item.Value));
                 }
 
-                var csrfToken = cookie["__csrf"]?.Value ?? "";
+                string csrfToken = cookie["__csrf"]?.Value ?? "";
                 Dictionary<string, string> header = new(12)
                 {
                     { "osver", cookie["osver"]?.Value ?? "" }, // 系统版本
@@ -162,7 +162,7 @@ internal static partial class Request
         HttpResponseMessage? response = null;
         try
         {
-            var statusCode = 500;
+            int statusCode = 500;
 
             response = await client.SendAsync(
                 method,
@@ -188,9 +188,9 @@ internal static partial class Request
             }
 
             JsonArray cookieArray = [];
-            foreach (var rawCookie in responseCookies)
+            foreach (string rawCookie in responseCookies)
             {
-                var cookieValue = CookieDomainRegex().Replace(rawCookie, "");
+                string cookieValue = CookieDomainRegex().Replace(rawCookie, "");
                 if (!string.IsNullOrEmpty(cookieValue))
                 {
                     cookieArray.Add(JsonValue.Create(cookieValue));
@@ -230,7 +230,7 @@ internal static partial class Request
                 statusCode =
                     answer["body"] is JsonObject eapiBody
                     && eapiBody["code"] is JsonValue eapiCode
-                    && eapiCode.TryGetValue<int>(out var eapiCodeInt)
+                    && eapiCode.TryGetValue<int>(out int eapiCodeInt)
                         ? eapiCodeInt
                         : (int)response.StatusCode;
             }
@@ -240,7 +240,7 @@ internal static partial class Request
                 statusCode =
                     answer["body"] is JsonObject body
                     && body["code"] is JsonValue code
-                    && code.TryGetValue<int>(out var codeInt)
+                    && code.TryGetValue<int>(out int codeInt)
                         ? codeInt
                         : (int)response.StatusCode;
                 if (statusCode == 502)

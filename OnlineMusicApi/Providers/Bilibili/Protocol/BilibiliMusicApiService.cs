@@ -1,11 +1,10 @@
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using OnlineMusicApi.Internal.Providers.Bilibili.Protocol.Extensions;
-
 namespace OnlineMusicApi.Internal.Providers.Bilibili.Protocol;
 
 /// <summary>
@@ -93,7 +92,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             }
         }
 
-        var numResults = data["numResults"]?.GetValue<int>() ?? 0;
+        int numResults = data["numResults"]?.GetValue<int>() ?? 0;
         return new JsonObject { ["isEnd"] = numResults <= page * PageSize, ["data"] = result };
     }
 
@@ -109,7 +108,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
                 continue;
             }
 
-            var upic = GetString(source, "upic");
+            string? upic = GetString(source, "upic");
             result.Add(
                 new JsonObject
                 {
@@ -126,7 +125,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             );
         }
 
-        var numResults = data["numResults"]?.GetValue<int>() ?? 0;
+        int numResults = data["numResults"]?.GetValue<int>() ?? 0;
         return new JsonObject { ["isEnd"] = numResults <= page * PageSize, ["data"] = result };
     }
 
@@ -134,7 +133,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var cid = GetString(musicItem, "cid");
+        string? cid = GetString(musicItem, "cid");
         if (string.IsNullOrWhiteSpace(cid))
         {
             JsonObject cidRes = await GetCidAsync(
@@ -150,8 +149,8 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
         }
 
         QueryCollection query = new() { { "cid", cid }, { "fnval", "16" } };
-        var bvid = GetString(musicItem, "bvid");
-        var aid = GetString(musicItem, "aid");
+        string? bvid = GetString(musicItem, "bvid");
+        string? aid = GetString(musicItem, "aid");
         if (!string.IsNullOrWhiteSpace(bvid))
         {
             query.Add("bvid", bvid);
@@ -181,7 +180,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
 
             if (audioList.Count > 0)
             {
-                var index = quality switch
+                int index = quality switch
                 {
                     "low" => 0,
                     "standard" => 1,
@@ -204,8 +203,8 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             return null;
         }
 
-        var host = new Uri(url).Host;
-        var referValue = $"https://www.bilibili.com/video/{bvid ?? aid ?? string.Empty}";
+        string host = new Uri(url).Host;
+        string referValue = $"https://www.bilibili.com/video/{bvid ?? aid ?? string.Empty}";
 
         return new JsonObject
         {
@@ -231,7 +230,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             GetString(albumItem, "aid")
         );
         JsonObject? data = cidRes["data"] as JsonObject;
-        var cid = GetString(data, "cid");
+        string? cid = GetString(data, "cid");
         JsonArray? pages = data?["pages"]?.AsArray();
 
         JsonArray musicList = [];
@@ -282,10 +281,12 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
         _ = type;
         await EnsureCookieAsync();
 
-        var id = GetString(artistItem, "id")
+        string id = GetString(artistItem, "id")
             ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
 
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        string now = DateTimeOffset
+            .UtcNow.ToUnixTimeSeconds()
+            .ToString(CultureInfo.InvariantCulture);
         Dictionary<string, object?> baseParams = new()
         {
             ["mid"] = id,
@@ -305,7 +306,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             ["wts"] = now,
         };
 
-        var wRid = await GetRidAsync(baseParams);
+        string wRid = await GetRidAsync(baseParams);
         QueryCollection query = ToQueryCollection(baseParams);
         query.Add("w_rid", wRid);
 
@@ -338,9 +339,9 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             }
         }
 
-        var pn = resultData["page"]?["pn"]?.GetValue<int>() ?? 0;
-        var ps = resultData["page"]?["ps"]?.GetValue<int>() ?? 0;
-        var count = resultData["page"]?["count"]?.GetValue<int>() ?? 0;
+        int pn = resultData["page"]?["pn"]?.GetValue<int>() ?? 0;
+        int ps = resultData["page"]?["ps"]?.GetValue<int>() ?? 0;
+        int count = resultData["page"]?["count"]?.GetValue<int>() ?? 0;
 
         return new JsonObject { ["isEnd"] = pn * ps >= count, ["data"] = mapped };
     }
@@ -447,8 +448,8 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
 
     private async Task<JsonObject> GetBiliTicketAsync()
     {
-        var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var hexSign = HmacSha256Hex("XgwSnGZ1p", $"ts{ts}");
+        long ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        string hexSign = HmacSha256Hex("XgwSnGZ1p", $"ts{ts}");
 
         QueryCollection query = new()
         {
@@ -479,23 +480,23 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
     private async Task<string> GetRidAsync(Dictionary<string, object?> parameters)
     {
         (string? img, string? sub) = await GetWbiKeysAsync();
-        var mixin = GetMixinKey(img + sub);
+        string mixin = GetMixinKey(img + sub);
 
         List<string> pairs = [];
-        foreach (var key in parameters.Keys.OrderBy(x => x, StringComparer.Ordinal))
+        foreach (string key in parameters.Keys.OrderBy(x => x, StringComparer.Ordinal))
         {
-            var value = parameters[key];
+            object? value = parameters[key];
             if (value is null)
             {
                 continue;
             }
 
-            var text = value.ToString() ?? string.Empty;
+            string text = value.ToString() ?? string.Empty;
             text = RidFilterRegex().Replace(text, string.Empty);
             pairs.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(text)}");
         }
 
-        var f = string.Join("&", pairs);
+        string f = string.Join("&", pairs);
         return Md5Hex(f + mixin);
     }
 
@@ -522,7 +523,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             "application/json"
         );
         response.EnsureSuccessStatusCode();
-        var text = await response.Content.ReadAsStringAsync();
+        string text = await response.Content.ReadAsStringAsync();
         return JsonNode.Parse(text)?.AsObject() ?? [];
     }
 
@@ -533,22 +534,22 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
             return 0;
         }
 
-        if (duration is JsonValue number && number.TryGetValue<int>(out var seconds))
+        if (duration is JsonValue number && number.TryGetValue<int>(out int seconds))
         {
             return seconds;
         }
 
-        var text = duration.ToString();
-        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
+        string text = duration.ToString();
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int numeric))
         {
             return numeric;
         }
 
-        var parts = text.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        var sum = 0;
-        foreach (var part in parts)
+        string[] parts = text.Split(':', StringSplitOptions.RemoveEmptyEntries);
+        int sum = 0;
+        foreach (string part in parts)
         {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v))
             {
                 continue;
             }
@@ -560,9 +561,9 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
 
     private static JsonObject FormatMedia(JsonObject source)
     {
-        var rawTitle = GetString(source, "title") ?? string.Empty;
-        var title = WebUtility.HtmlDecode(EmTagRegex().Replace(rawTitle, string.Empty));
-        var pic = GetString(source, "pic");
+        string rawTitle = GetString(source, "title") ?? string.Empty;
+        string title = WebUtility.HtmlDecode(EmTagRegex().Replace(rawTitle, string.Empty));
+        string? pic = GetString(source, "pic");
 
         JsonObject result = new()
         {
@@ -621,7 +622,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
 
     private static string GetMixinKey(string text)
     {
-        var map = new[]
+        int[] map = new[]
         {
             46,
             47,
@@ -690,7 +691,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
         };
 
         StringBuilder sb = new();
-        foreach (var i in map)
+        foreach (int i in map)
         {
             if (i < text.Length)
             {
@@ -704,13 +705,13 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
     private static string HmacSha256Hex(string key, string message)
     {
         using HMACSHA256 hmac = new(Encoding.UTF8.GetBytes(key));
-        var bytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+        byte[] bytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static string Md5Hex(string text)
     {
-        var hash = MD5.HashData(Encoding.UTF8.GetBytes(text));
+        byte[] hash = MD5.HashData(Encoding.UTF8.GetBytes(text));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
@@ -727,14 +728,14 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
 
         return value switch
         {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out var intValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
+            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
                 intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out var longValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
                 longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out var doubleValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
                 doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out var boolValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
                 boolValue.ToString(),
             _ => value.ToJsonString(),
         };
@@ -747,7 +748,7 @@ internal sealed partial class BilibiliMusicApiService : IDisposable
                 unixSeconds,
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
-                out var ts
+                out long ts
             )
         )
         {

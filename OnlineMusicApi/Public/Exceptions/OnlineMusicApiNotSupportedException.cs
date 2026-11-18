@@ -1,4 +1,4 @@
-﻿namespace OnlineMusicApi;
+namespace OnlineMusicApi;
 
 /// <summary>该音源未实现请求的能力。</summary>
 /// <remarks>初始化异常。</remarks>

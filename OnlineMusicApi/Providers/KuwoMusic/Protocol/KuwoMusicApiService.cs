@@ -1,15 +1,14 @@
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using OnlineMusicApi.Internal.Providers.KuwoMusic.Protocol.Extensions;
-
 namespace OnlineMusicApi.Internal.Providers.KuwoMusic.Protocol;
 
 /// <summary>
 /// 酷我音乐 API
 /// </summary>
-internal sealed partial class KuwoMusicApiService : IDisposable
+internal sealed class KuwoMusicApiService : IDisposable
 {
     private const int PageSize = 20;
 
@@ -49,7 +48,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var id = GetString(musicItem, "id");
+        string? id = GetString(musicItem, "id");
         if (string.IsNullOrWhiteSpace(id))
         {
             return null;
@@ -65,7 +64,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
             }
         );
 
-        var url = GetString(res, "url");
+        string? url = GetString(res, "url");
         return string.IsNullOrWhiteSpace(url) ? null : new JsonObject { ["url"] = url };
     }
 
@@ -106,7 +105,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var id = GetString(musicItem, "id")
+        string id = GetString(musicItem, "id")
             ?? throw new ArgumentException("musicItem.id 不能为空", nameof(musicItem));
 
         JsonObject res = await GetJsonAsync(
@@ -122,8 +121,8 @@ internal sealed partial class KuwoMusicApiService : IDisposable
                 continue;
             }
 
-            var time = GetString(lyricLine, "time") ?? string.Empty;
-            var lyric = GetString(lyricLine, "lineLyric") ?? string.Empty;
+            string time = GetString(lyricLine, "time") ?? string.Empty;
+            string lyric = GetString(lyricLine, "lineLyric") ?? string.Empty;
             if (lines.Length > 0)
             {
                 lines.Append('\n');
@@ -139,7 +138,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(albumItem);
 
-        var albumId = GetString(albumItem, "id")
+        string albumId = GetString(albumItem, "id")
             ?? throw new ArgumentException("albumItem.id 不能为空", nameof(albumItem));
 
         JsonObject res = await GetJsonAsync(
@@ -195,8 +194,8 @@ internal sealed partial class KuwoMusicApiService : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sheetId);
 
-        var page = 1;
-        var totalPage = 30;
+        int page = 1;
+        int totalPage = 30;
         JsonArray musicList = [];
 
         while (page < totalPage)
@@ -204,7 +203,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
             try
             {
                 JsonObject data = await GetMusicSheetResponseByIdAsync(sheetId, page, 80);
-                var total = data["total"]?.GetValue<int>() ?? 0;
+                int total = data["total"]?.GetValue<int>() ?? 0;
                 totalPage = Math.Max(1, (int)Math.Ceiling(total / 80d));
 
                 foreach (
@@ -297,16 +296,16 @@ internal sealed partial class KuwoMusicApiService : IDisposable
             );
         }
 
-        var pn = ParseInt(GetString(res, "PN"));
-        var rn = ParseInt(GetString(res, "RN"));
-        var total = ParseInt(GetString(res, "TOTAL"));
+        int pn = ParseInt(GetString(res, "PN"));
+        int rn = ParseInt(GetString(res, "RN"));
+        int total = ParseInt(GetString(res, "TOTAL"));
 
         return new JsonObject { ["isEnd"] = (pn + 1) * rn >= total, ["data"] = mapped };
     }
 
     private async Task<JsonObject> GetArtistAlbumWorksAsync(JsonObject artistItem, int page)
     {
-        var id = GetString(artistItem, "id")
+        string id = GetString(artistItem, "id")
             ?? throw new ArgumentException("artistItem.id 不能为空", nameof(artistItem));
 
         JsonObject res = await GetJsonAsync(
@@ -342,8 +341,8 @@ internal sealed partial class KuwoMusicApiService : IDisposable
             albums.Add(FormatAlbumItem(album));
         }
 
-        var pn = ParseInt(GetString(res, "pn"));
-        var total = ParseInt(GetString(res, "total"));
+        int pn = ParseInt(GetString(res, "pn"));
+        int total = ParseInt(GetString(res, "total"));
         return new JsonObject { ["isEnd"] = (pn + 1) * PageSize >= total, ["data"] = albums };
     }
 
@@ -370,7 +369,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
         IEnumerable<KeyValuePair<string, string>>? query = null
     )
     {
-        var text = await GetStringResponseAsync(HttpMethod.Get, url, query);
+        string text = await GetStringResponseAsync(HttpMethod.Get, url, query);
 
         try
         {
@@ -419,11 +418,11 @@ internal sealed partial class KuwoMusicApiService : IDisposable
 
     private static JsonObject FormatMusicItem(JsonObject source)
     {
-        var musicRid = GetString(source, "MUSICRID")
+        string musicRid = GetString(source, "MUSICRID")
             ?.Replace("MUSIC_", string.Empty, StringComparison.Ordinal)
             ?? string.Empty;
 
-        var duration =
+        long duration =
             ParseInt(GetString(source, "DURATION") ?? GetString(source, "duration")) * 1000L;
 
         return new JsonObject
@@ -489,7 +488,7 @@ internal sealed partial class KuwoMusicApiService : IDisposable
             return null;
         }
 
-        var firstSlash = albumPicShort.IndexOf('/', StringComparison.Ordinal);
+        int firstSlash = albumPicShort.IndexOf('/', StringComparison.Ordinal);
         return firstSlash == -1
             ? null
             : $"https://img4.kuwo.cn/star/albumcover/256{albumPicShort[firstSlash..]}";
@@ -510,21 +509,21 @@ internal sealed partial class KuwoMusicApiService : IDisposable
 
         return value switch
         {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out var intValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
+            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
                 intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out var longValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
                 longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out var doubleValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
                 doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out var boolValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
                 boolValue.ToString(),
             _ => value.ToJsonString(),
         };
     }
 
     private static int ParseInt(string? value) =>
-        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)
             ? number
             : 0;
 

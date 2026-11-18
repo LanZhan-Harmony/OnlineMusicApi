@@ -1,5 +1,3 @@
-using OnlineMusicApi.Internal.Providers.Abstractions;
-
 namespace OnlineMusicApi;
 
 public sealed partial class OnlineMusicApiClient
@@ -10,12 +8,6 @@ public sealed partial class OnlineMusicApiClient
     /// <returns>歌词文本与格式。</returns>
     public Task<Lyric> GetLyricAsync(SongId id, CancellationToken cancellationToken = default)
     {
-        ILyricProvider provider = Require<ILyricProvider>(
-            id.Source,
-            ProviderCapability.Lyric,
-            nameof(GetLyricAsync)
-        );
-
-        return provider.GetLyricAsync(id, cancellationToken);
+        return _playback.GetLyricAsync(id, cancellationToken);
     }
 }

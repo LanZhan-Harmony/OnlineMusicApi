@@ -9,7 +9,7 @@ internal static class ExceptionExtensions
         /// <summary>
         /// 获取最内层异常
         /// </summary>
-        /// <param name="exception"></param>
+        
         /// <returns></returns>
         public Exception GetInmostException()
         {
@@ -23,7 +23,7 @@ internal static class ExceptionExtensions
         /// <summary>
         /// 返回一个字符串，其中包含异常的所有信息。
         /// </summary>
-        /// <param name="exception"></param>
+        
         /// <returns></returns>
         public string ToFullString()
         {

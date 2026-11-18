@@ -14,8 +14,13 @@ internal static class PageAssembler
         bool greedy,
         int maxGreedyPages,
         Func<int, CancellationToken, Task<RawBatch>> fetchBatch,
-        Func<IReadOnlyList<RawSong>, CancellationToken, Task<IReadOnlyList<RawSong>>> probeAndFilter,
-        CancellationToken cancellationToken)
+        Func<
+            IReadOnlyList<RawSong>,
+            CancellationToken,
+            Task<IReadOnlyList<RawSong>>
+        > probeAndFilter,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(fetchBatch);
         ArgumentNullException.ThrowIfNull(probeAndFilter);
@@ -28,7 +33,8 @@ internal static class PageAssembler
 
         while (true)
         {
-            RawBatch batch = await fetchBatch(consumedOffset, cancellationToken).ConfigureAwait(false);
+            RawBatch batch = await fetchBatch(consumedOffset, cancellationToken)
+                .ConfigureAwait(false);
             pages++;
             rawCount += batch.Items.Count;
 
@@ -44,10 +50,7 @@ internal static class PageAssembler
             consumedOffset = batch.NextOffset;
             hasMore = batch.HasMore;
 
-            if (!greedy
-                || playable.Count >= limit
-                || !hasMore
-                || pages >= maxGreedyPages)
+            if (!greedy || playable.Count >= limit || !hasMore || pages >= maxGreedyPages)
             {
                 break;
             }
@@ -72,9 +75,10 @@ internal static class PageAssembler
             playable.RemoveRange(limit, playable.Count - limit);
         }
 
-        int consumedRawCount = greedy && playable.Count >= limit
-            ? playable[limit - 1].RawIndex - requestOffset + 1
-            : rawCount;
+        int consumedRawCount =
+            greedy && playable.Count >= limit
+                ? playable[limit - 1].RawIndex - requestOffset + 1
+                : rawCount;
         int returnedCount = Math.Min(playable.Count, limit);
         int excluded = Math.Max(consumedRawCount - returnedCount, 0);
         string? warning = excluded > 0 ? $"已过滤 {excluded} 首不可播放歌曲" : null;

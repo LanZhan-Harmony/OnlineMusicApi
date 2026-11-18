@@ -11,7 +11,8 @@ internal static class PageValidator
             throw new OnlineMusicApiResponseException(
                 $"页面音源 {page.Source} 与预期 {expectedSource} 不一致。",
                 "PageValidation",
-                expectedSource);
+                expectedSource
+            );
         }
 
         if (!typeof(ISourcedEntity).IsAssignableFrom(typeof(T)))
@@ -26,7 +27,8 @@ internal static class PageValidator
                 throw new OnlineMusicApiResponseException(
                     $"页面数据混入了其他音源：{entity.Source}。",
                     "PageValidation",
-                    expectedSource);
+                    expectedSource
+                );
             }
         }
     }

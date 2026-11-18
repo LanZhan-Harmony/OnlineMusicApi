@@ -1,4 +1,4 @@
-﻿namespace OnlineMusicApi;
+namespace OnlineMusicApi;
 
 /// <summary>播放地址或歌词解密失败。</summary>
 /// <remarks>初始化异常。</remarks>

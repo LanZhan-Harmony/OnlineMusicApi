@@ -25,7 +25,12 @@ internal static class ValueNormalizer
 
     public static int? ToInt(string? value)
     {
-        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result)
+        return int.TryParse(
+            value,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out int result
+        )
             ? result
             : null;
     }

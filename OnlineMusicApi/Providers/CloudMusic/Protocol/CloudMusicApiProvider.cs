@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using System.Net;
 using System.Security.Cryptography;
 using OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;
 using static OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.CloudMusicApiProvider;
@@ -66,7 +67,7 @@ internal sealed class CloudMusicApiProvider
                 case ParameterType.Optional:
                     data.Add(
                         parameterInfo.Key,
-                        queries.TryGetValue(parameterInfo.GetForwardedKey(), out var value)
+                        queries.TryGetValue(parameterInfo.GetForwardedKey(), out string? value)
                             ? parameterInfo.GetRealValue(value)
                             : parameterInfo.DefaultValue ?? ""
                     );
@@ -132,10 +133,7 @@ internal static class CloudMusicApiProviders
         "/artist/album",
         HttpMethod.Post,
         q => $"https://music.163.com/weapi/artist/albums/{q["id"]}",
-        [
-            new("limit", ParameterType.Optional, "30"),
-            new("offset", ParameterType.Optional, "0"),
-        ],
+        [new("limit", ParameterType.Optional, "30"), new("offset", ParameterType.Optional, "0")],
         BuildOptions("weapi")
     );
 

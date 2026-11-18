@@ -1,5 +1,8 @@
+using OnlineMusicApi.Internal.Features.Catalog;
+using OnlineMusicApi.Internal.Features.Playback;
+using OnlineMusicApi.Internal.Features.Search;
+using OnlineMusicApi.Internal.Features.Shared;
 using OnlineMusicApi.Internal.Infrastructure.Runtime;
-using OnlineMusicApi.Internal.Providers.Abstractions;
 
 namespace OnlineMusicApi;
 
@@ -7,6 +10,9 @@ namespace OnlineMusicApi;
 public sealed partial class OnlineMusicApiClient : IDisposable
 {
     private readonly OnlineMusicClientRuntime _runtime;
+    private readonly SearchService _search;
+    private readonly CatalogService _catalog;
+    private readonly PlaybackService _playback;
 
     /// <summary>使用默认 HttpClient 创建客户端。</summary>
     /// <param name="options">客户端配置。</param>
@@ -22,6 +28,10 @@ public sealed partial class OnlineMusicApiClient : IDisposable
     private OnlineMusicApiClient(OnlineMusicClientRuntime runtime)
     {
         _runtime = runtime;
+        ProviderRouter router = new(runtime.Providers, runtime.Registry);
+        _search = new SearchService(router);
+        _catalog = new CatalogService(router);
+        _playback = new PlaybackService(router);
     }
 
     /// <summary>已注册音源的能力信息。</summary>
@@ -31,20 +41,5 @@ public sealed partial class OnlineMusicApiClient : IDisposable
     public void Dispose()
     {
         _runtime.Dispose();
-    }
-
-    private T Require<T>(MusicSource source, ProviderCapability capability, string operation)
-        where T : class, IMusicProvider
-    {
-        if (
-            !_runtime.Registry.Supports(source, capability)
-            || !_runtime.Providers.TryGetValue(source, out IMusicProvider? provider)
-            || provider is not T typed
-        )
-        {
-            throw new OnlineMusicApiNotSupportedException(operation, source, capability);
-        }
-
-        return typed;
     }
 }

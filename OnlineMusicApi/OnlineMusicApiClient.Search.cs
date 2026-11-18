@@ -1,6 +1,3 @@
-using OnlineMusicApi.Internal.Providers.Abstractions;
-using OnlineMusicApi.Internal.Providers.Shared;
-
 namespace OnlineMusicApi;
 
 public sealed partial class OnlineMusicApiClient
@@ -10,25 +7,13 @@ public sealed partial class OnlineMusicApiClient
     /// <param name="query">搜索请求。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>歌曲分页结果。</returns>
-    public async Task<SongPage> SearchSongsAsync(
+    public Task<SongPage> SearchSongsAsync(
         MusicSource source,
         SearchQuery query,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(query);
-
-        ISongSearchProvider provider = Require<ISongSearchProvider>(
-            source,
-            ProviderCapability.SearchSong,
-            nameof(SearchSongsAsync)
-        );
-
-        SongPage page = await provider
-            .SearchSongsAsync(query, cancellationToken)
-            .ConfigureAwait(false);
-        PageValidator.EnsureSameSource(page, source);
-        return page;
+        return _search.SearchSongsAsync(source, query, cancellationToken);
     }
 
     /// <summary>搜索专辑。</summary>
@@ -36,25 +21,13 @@ public sealed partial class OnlineMusicApiClient
     /// <param name="query">搜索请求。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>专辑分页结果。</returns>
-    public async Task<AlbumPage> SearchAlbumsAsync(
+    public Task<AlbumPage> SearchAlbumsAsync(
         MusicSource source,
         SearchQuery query,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(query);
-
-        IAlbumSearchProvider provider = Require<IAlbumSearchProvider>(
-            source,
-            ProviderCapability.SearchAlbum,
-            nameof(SearchAlbumsAsync)
-        );
-
-        AlbumPage page = await provider
-            .SearchAlbumsAsync(query, cancellationToken)
-            .ConfigureAwait(false);
-        PageValidator.EnsureSameSource(page, source);
-        return page;
+        return _search.SearchAlbumsAsync(source, query, cancellationToken);
     }
 
     /// <summary>搜索艺术家。</summary>
@@ -62,25 +35,13 @@ public sealed partial class OnlineMusicApiClient
     /// <param name="query">搜索请求。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>艺术家分页结果。</returns>
-    public async Task<ArtistPage> SearchArtistsAsync(
+    public Task<ArtistPage> SearchArtistsAsync(
         MusicSource source,
         SearchQuery query,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(query);
-
-        IArtistSearchProvider provider = Require<IArtistSearchProvider>(
-            source,
-            ProviderCapability.SearchArtist,
-            nameof(SearchArtistsAsync)
-        );
-
-        ArtistPage page = await provider
-            .SearchArtistsAsync(query, cancellationToken)
-            .ConfigureAwait(false);
-        PageValidator.EnsureSameSource(page, source);
-        return page;
+        return _search.SearchArtistsAsync(source, query, cancellationToken);
     }
 
     /// <summary>搜索歌单。</summary>
@@ -88,25 +49,13 @@ public sealed partial class OnlineMusicApiClient
     /// <param name="query">搜索请求。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>歌单分页结果。</returns>
-    public async Task<PlaylistPage> SearchPlaylistsAsync(
+    public Task<PlaylistPage> SearchPlaylistsAsync(
         MusicSource source,
         SearchQuery query,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(query);
-
-        IPlaylistSearchProvider provider = Require<IPlaylistSearchProvider>(
-            source,
-            ProviderCapability.SearchPlaylist,
-            nameof(SearchPlaylistsAsync)
-        );
-
-        PlaylistPage page = await provider
-            .SearchPlaylistsAsync(query, cancellationToken)
-            .ConfigureAwait(false);
-        PageValidator.EnsureSameSource(page, source);
-        return page;
+        return _search.SearchPlaylistsAsync(source, query, cancellationToken);
     }
 
     /// <summary>获取搜索联想。仅部分音源支持。</summary>
@@ -120,12 +69,6 @@ public sealed partial class OnlineMusicApiClient
         CancellationToken cancellationToken = default
     )
     {
-        ISearchSuggestionProvider provider = Require<ISearchSuggestionProvider>(
-            source,
-            ProviderCapability.SearchSuggestion,
-            nameof(GetSuggestionsAsync)
-        );
-
-        return provider.GetSuggestionsAsync(keyword, cancellationToken);
+        return _search.GetSuggestionsAsync(source, keyword, cancellationToken);
     }
 }

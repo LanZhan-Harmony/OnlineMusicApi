@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
@@ -10,7 +11,7 @@ namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol;
 /// <summary>
 /// 网易云音乐API
 /// </summary>
-internal sealed partial class CloudMusicApiService : IDisposable
+internal sealed class CloudMusicApiService : IDisposable
 {
     private readonly HttpClient _client;
     private readonly bool _ownsClient;
@@ -246,7 +247,7 @@ internal sealed partial class CloudMusicApiService : IDisposable
         ArgumentNullException.ThrowIfNull(ids);
         ArgumentException.ThrowIfNullOrEmpty(parameterName);
 
-        var idValues = ids.Distinct().ToArray();
+        long[] idValues = ids.Distinct().ToArray();
         if (idValues.Length == 0)
         {
             throw new ArgumentException("至少需要一个 ID。", nameof(ids));

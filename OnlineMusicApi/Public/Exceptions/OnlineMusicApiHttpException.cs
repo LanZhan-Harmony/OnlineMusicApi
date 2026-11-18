@@ -1,4 +1,4 @@
-﻿namespace OnlineMusicApi;
+namespace OnlineMusicApi;
 
 /// <summary>上游返回非 2xx 状态码。</summary>
 /// <remarks>初始化异常。</remarks>

@@ -1,4 +1,5 @@
-﻿using System.Security.Cryptography;
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace OnlineMusicApi.Internal.Providers.CloudMusic.Protocol.Utils;

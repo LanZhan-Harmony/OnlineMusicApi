@@ -1,10 +1,9 @@
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
 using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using OnlineMusicApi.Internal.Providers.QQMusic.Protocol.Extensions;
-
 namespace OnlineMusicApi.Internal.Providers.QQMusic.Protocol;
 
 /// <summary>
@@ -69,13 +68,13 @@ internal sealed partial class QQMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var songMid = GetString(musicItem, "songmid");
+        string? songMid = GetString(musicItem, "songmid");
         if (string.IsNullOrEmpty(songMid))
         {
             return null;
         }
 
-        var mediaType = quality switch
+        string mediaType = quality switch
         {
             "low" => "m4a",
             "high" => "320",
@@ -85,8 +84,8 @@ internal sealed partial class QQMusicApiService : IDisposable
 
         // 与 qq.ts 保持一致：先走不带 filename 的 CgiGetVkey，请求可播放链接。
         JsonObject? vKey = await GetPlayableSourceUrlAsync(songMid);
-        var sip = vKey?["req_0"]?["data"]?["sip"]?.AsArray().FirstOrDefault()?.ToString();
-        var purl = vKey
+        string? sip = vKey?["req_0"]?["data"]?["sip"]?.AsArray().FirstOrDefault()?.ToString();
+        string? purl = vKey
             ?["req_0"]?["data"]?["midurlinfo"]?.AsArray()
             .FirstOrDefault()
             ?["purl"]?.ToString();
@@ -114,7 +113,7 @@ internal sealed partial class QQMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(albumItem);
 
-        var albumMid = GetString(albumItem, "albumMID");
+        string? albumMid = GetString(albumItem, "albumMID");
         if (string.IsNullOrEmpty(albumMid))
         {
             throw new ArgumentException("albumMID 不能为空", nameof(albumItem));
@@ -138,7 +137,7 @@ internal sealed partial class QQMusicApiService : IDisposable
             },
         };
 
-        var url = ChangeUrlQuery(
+        string url = ChangeUrlQuery(
             new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
             "https://u.y.qq.com/cgi-bin/musicu.fcg?g_tk=5381&format=json&inCharset=utf8&outCharset=utf-8"
         );
@@ -167,18 +166,18 @@ internal sealed partial class QQMusicApiService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(musicItem);
 
-        var songMid = GetString(musicItem, "songmid");
+        string? songMid = GetString(musicItem, "songmid");
         if (string.IsNullOrEmpty(songMid))
         {
             throw new ArgumentException("songmid 不能为空", nameof(musicItem));
         }
 
-        var url =
+        string url =
             $"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={Uri.EscapeDataString(songMid)}&pcachetime={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
         JsonObject res = await GetJsonpAsync(url);
 
-        var lyric = DecodeLyricBase64(GetString(res, "lyric"));
-        var trans = DecodeLyricBase64(GetString(res, "trans"));
+        string? lyric = DecodeLyricBase64(GetString(res, "lyric"));
+        string? trans = DecodeLyricBase64(GetString(res, "trans"));
 
         JsonObject result = new() { ["rawLrc"] = lyric ?? string.Empty };
         if (!string.IsNullOrEmpty(trans))
@@ -193,7 +192,7 @@ internal sealed partial class QQMusicApiService : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sheetId);
 
-        var url =
+        string url =
             $"https://i.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&utf8=1&disstid={Uri.EscapeDataString(sheetId)}&loginUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
         JsonObject res = await GetJsonpAsync(url, referer: "https://y.qq.com/n/yqq/playlist");
 
@@ -264,8 +263,8 @@ internal sealed partial class QQMusicApiService : IDisposable
 
         JsonObject res = await PostJsonAsync("https://u.y.qq.com/cgi-bin/musicu.fcg", payload);
 
-        var sum = res["req_1"]?["data"]?["meta"]?["sum"]?.GetValue<int>() ?? 0;
-        var listName = SearchTypeMap.GetValueOrDefault(searchType, "song");
+        int sum = res["req_1"]?["data"]?["meta"]?["sum"]?.GetValue<int>() ?? 0;
+        string listName = SearchTypeMap.GetValueOrDefault(searchType, "song");
         JsonArray list = res["req_1"]?["data"]?["body"]?[listName]?["list"]?.AsArray() ?? [];
 
         return new JsonObject { ["isEnd"] = sum <= page * PageSize, ["data"] = list.DeepClone() };
@@ -278,8 +277,8 @@ internal sealed partial class QQMusicApiService : IDisposable
             typeObj = MediaTypeMap["128"];
         }
 
-        var guid = Random.Shared.Next(1, 10_000_000).ToString(CultureInfo.InvariantCulture);
-        var filename = $"{typeObj.Prefix}{id}{typeObj.Extension}";
+        string guid = Random.Shared.Next(1, 10_000_000).ToString(CultureInfo.InvariantCulture);
+        string filename = $"{typeObj.Prefix}{id}{typeObj.Extension}";
 
         JsonObject payload = new()
         {
@@ -308,7 +307,7 @@ internal sealed partial class QQMusicApiService : IDisposable
             },
         };
 
-        var url = ChangeUrlQuery(
+        string url = ChangeUrlQuery(
             new Dictionary<string, string>
             {
                 ["-"] = "getplaysongvkey",
@@ -358,14 +357,14 @@ internal sealed partial class QQMusicApiService : IDisposable
             },
         };
 
-        var url =
+        string url =
             $"https://u.y.qq.com/cgi-bin/musicu.fcg?data={Uri.EscapeDataString(payload.ToJsonString())}";
         return await GetJsonAsync(url);
     }
 
     private async Task<JsonObject> GetArtistAlbumsAsync(JsonObject artistItem, int page)
     {
-        var singerMid = GetString(artistItem, "singerMID");
+        string? singerMid = GetString(artistItem, "singerMID");
         if (string.IsNullOrEmpty(singerMid))
         {
             throw new ArgumentException("singerMID 不能为空", nameof(artistItem));
@@ -389,7 +388,7 @@ internal sealed partial class QQMusicApiService : IDisposable
             },
         };
 
-        var url = ChangeUrlQuery(
+        string url = ChangeUrlQuery(
             new Dictionary<string, string> { ["data"] = payload.ToJsonString() },
             "https://u.y.qq.com/cgi-bin/musicu.fcg"
         );
@@ -404,13 +403,13 @@ internal sealed partial class QQMusicApiService : IDisposable
             }
         }
 
-        var total = res["singerAlbum"]?["data"]?["total"]?.GetValue<int>() ?? 0;
+        int total = res["singerAlbum"]?["data"]?["total"]?.GetValue<int>() ?? 0;
         return new JsonObject { ["isEnd"] = total <= page * PageSize, ["data"] = albums };
     }
 
     private async Task<JsonObject> GetJsonAsync(string url, string referer = "https://y.qq.com")
     {
-        var response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer);
+        string response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer);
         return JsonNode.Parse(response)?.AsObject() ?? [];
     }
 
@@ -420,7 +419,7 @@ internal sealed partial class QQMusicApiService : IDisposable
         string referer = "https://y.qq.com"
     )
     {
-        var response = await GetStringResponseAsync(
+        string response = await GetStringResponseAsync(
             HttpMethod.Post,
             url,
             null,
@@ -433,7 +432,7 @@ internal sealed partial class QQMusicApiService : IDisposable
 
     private async Task<JsonObject> GetJsonpAsync(string url, string referer = "https://y.qq.com")
     {
-        var response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer);
+        string response = await GetStringResponseAsync(HttpMethod.Get, url, null, referer: referer);
         return ParseJsonp(response) ?? [];
     }
 
@@ -471,19 +470,19 @@ internal sealed partial class QQMusicApiService : IDisposable
             return null;
         }
 
-        var json = JsonpWrapperRegex().Replace(raw, string.Empty);
+        string json = JsonpWrapperRegex().Replace(raw, string.Empty);
         return JsonNode.Parse(json)?.AsObject();
     }
 
     private static JsonObject FormatMusicItem(JsonObject source)
     {
         JsonObject? albumObject = source["album"] as JsonObject;
-        var albumId = GetString(source, "albumid") ?? GetString(albumObject, "id");
-        var albumMid = GetString(source, "albummid") ?? GetString(albumObject, "mid");
-        var albumName = GetString(source, "albumname") ?? GetString(albumObject, "title");
+        string? albumId = GetString(source, "albumid") ?? GetString(albumObject, "id");
+        string? albumMid = GetString(source, "albummid") ?? GetString(albumObject, "mid");
+        string? albumName = GetString(source, "albumname") ?? GetString(albumObject, "title");
 
         JsonArray singers = source["singer"]?.AsArray() ?? [];
-        var singerNames = string.Join(
+        string singerNames = string.Join(
             ", ",
             singers
                 .OfType<JsonObject>()
@@ -504,7 +503,7 @@ internal sealed partial class QQMusicApiService : IDisposable
             );
         }
 
-        var duration = int.TryParse(
+        long duration = int.TryParse(
             GetString(source, "interval"),
             NumberStyles.Integer,
             CultureInfo.InvariantCulture,
@@ -533,7 +532,7 @@ internal sealed partial class QQMusicApiService : IDisposable
 
     private static JsonObject FormatAlbumItem(JsonObject source)
     {
-        var albumMid = GetString(source, "albumMID") ?? GetString(source, "album_mid");
+        string? albumMid = GetString(source, "albumMID") ?? GetString(source, "album_mid");
 
         return new JsonObject
         {
@@ -590,14 +589,14 @@ internal sealed partial class QQMusicApiService : IDisposable
 
         return value switch
         {
-            JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) => text,
-            JsonValue jsonValue when jsonValue.TryGetValue<int>(out var intValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<string>(out string? text) => text,
+            JsonValue jsonValue when jsonValue.TryGetValue<int>(out int intValue) =>
                 intValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<long>(out var longValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<long>(out long longValue) =>
                 longValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<double>(out var doubleValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<double>(out double doubleValue) =>
                 doubleValue.ToString(CultureInfo.InvariantCulture),
-            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out var boolValue) =>
+            JsonValue jsonValue when jsonValue.TryGetValue<bool>(out bool boolValue) =>
                 boolValue.ToString(),
             _ => value.ToJsonString(),
         };
@@ -605,18 +604,18 @@ internal sealed partial class QQMusicApiService : IDisposable
 
     private static string ChangeUrlQuery(IReadOnlyDictionary<string, string> query, string baseUrl)
     {
-        var index = baseUrl.IndexOf('?', StringComparison.Ordinal);
-        var url = index == -1 ? baseUrl : baseUrl[..index];
+        int index = baseUrl.IndexOf('?', StringComparison.Ordinal);
+        string url = index == -1 ? baseUrl : baseUrl[..index];
         Dictionary<string, string> currentQuery = [with(StringComparer.Ordinal)];
 
         if (index != -1)
         {
-            var queryString = baseUrl[(index + 1)..];
-            foreach (var item in queryString.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            string queryString = baseUrl[(index + 1)..];
+            foreach (string item in queryString.Split('&', StringSplitOptions.RemoveEmptyEntries))
             {
-                var temp = item.Split('=', 2, StringSplitOptions.None);
-                var key = temp[0];
-                var value = temp.Length > 1 ? Uri.UnescapeDataString(temp[1]) : string.Empty;
+                string[] temp = item.Split('=', 2, StringSplitOptions.None);
+                string key = temp[0];
+                string value = temp.Length > 1 ? Uri.UnescapeDataString(temp[1]) : string.Empty;
                 currentQuery[key] = value;
             }
         }
@@ -656,7 +655,7 @@ internal sealed partial class QQMusicApiService : IDisposable
 
         try
         {
-            var bytes = Convert.FromBase64String(value);
+            byte[] bytes = Convert.FromBase64String(value);
             return WebUtility.HtmlDecode(Encoding.UTF8.GetString(bytes));
         }
         catch

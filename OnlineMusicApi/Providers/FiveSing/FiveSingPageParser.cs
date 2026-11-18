@@ -12,10 +12,12 @@ internal static class FiveSingPageParser
             Id = id,
             Name = Decode(Extract(html, @"OwnerNickName\s*=\s*'([^']*)'")),
             Description = Decode(
-                Extract(html, @"<meta\s+name=""description""\s+content=""([^""]*)""")),
+                Extract(html, @"<meta\s+name=""description""\s+content=""([^""]*)""")
+            ),
             AvatarUrl = Extract(
                 html,
-                @"<img[^>]+src=""(https://wsingbssdl\.kugou\.com/[^""]+188x188[^""]*)"""),
+                @"<img[^>]+src=""(https://wsingbssdl\.kugou\.com/[^""]+188x188[^""]*)"""
+            ),
         };
     }
 

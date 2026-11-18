@@ -1,5 +1,3 @@
-using OnlineMusicApi.Internal.Providers.Abstractions;
-
 namespace OnlineMusicApi;
 
 public sealed partial class OnlineMusicApiClient
@@ -16,31 +14,6 @@ public sealed partial class OnlineMusicApiClient
         CancellationToken cancellationToken = default
     )
     {
-        IPlaybackProvider provider = Require<IPlaybackProvider>(
-            id.Source,
-            ProviderCapability.Playback,
-            nameof(ResolveMediaAsync)
-        );
-
-        return ResolveMediaCoreAsync(provider, id, quality, cancellationToken);
-    }
-
-    private static async Task<MediaSource> ResolveMediaCoreAsync(
-        IPlaybackProvider provider,
-        SongId id,
-        AudioQuality quality,
-        CancellationToken cancellationToken
-    )
-    {
-        MediaSource? media = await provider
-            .ResolveMediaAsync(id, quality, cancellationToken)
-            .ConfigureAwait(false);
-
-        return media
-            ?? throw new OnlineMusicApiMediaException(
-                "该歌曲不可播放。",
-                nameof(ResolveMediaAsync),
-                id.Source
-            );
+        return _playback.ResolveMediaAsync(id, quality, cancellationToken);
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using OnlineMusicApi.Internal.Infrastructure.Http;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -18,8 +19,8 @@ internal static class Crypto
 
     public static Dictionary<string, string> WEApi(object obj)
     {
-        var text = JsonSerializer.Serialize(obj);
-        var secretKey = RandomNumberGenerator.GetBytes(16);
+        string text = JsonSerializer.Serialize(obj);
+        byte[] secretKey = RandomNumberGenerator.GetBytes(16);
         secretKey = [.. secretKey.Select(n => (byte)base62[n % 62])];
         return new()
         {
@@ -41,7 +42,7 @@ internal static class Crypto
 
     public static Dictionary<string, string> LinuxApi(object obj)
     {
-        var text = JsonSerializer.Serialize(obj);
+        string text = JsonSerializer.Serialize(obj);
         return new()
         {
             {
@@ -54,10 +55,10 @@ internal static class Crypto
 
     public static Dictionary<string, string> EApi(string url, object obj)
     {
-        var text = JsonSerializer.Serialize(obj);
-        var message = $"nobody{url}use{text}md5forencrypt";
-        var digest = message.ToByteArrayUtf8().ComputeMd5().ToHexStringLower();
-        var data = $"{url}-36cd479b6b5-{text}-36cd479b6b5-{digest}";
+        string text = JsonSerializer.Serialize(obj);
+        string message = $"nobody{url}use{text}md5forencrypt";
+        string digest = message.ToByteArrayUtf8().ComputeMd5().ToHexStringLower();
+        string data = $"{url}-36cd479b6b5-{text}-36cd479b6b5-{digest}";
         return new()
         {
             {

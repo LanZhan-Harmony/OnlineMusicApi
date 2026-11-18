@@ -1,4 +1,4 @@
-﻿namespace OnlineMusicApi.Internal.Providers.Abstractions;
+namespace OnlineMusicApi.Internal.Providers.Abstractions;
 
 internal interface IAlbumSearchProvider : IMusicProvider
 {
